@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "FlowNexa",
+    "slug": "flownexa",
+    "scheme": "flownexa",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-camera", { "cameraPermission": "FlowNexa uses the camera to capture work evidence." }],
+      ["expo-notifications", { "defaultChannel": "work-updates" }]
+    ],
+    "experiments": { "typedRoutes": true },
+    "ios": { "supportsTablet": true },
+    "android": { "edgeToEdgeEnabled": true }
+  }
+}

@@ -1,0 +1,58 @@
+name: FlowNexa CI
+
+on:
+  push:
+    branches: [web-app, mobile-app]
+  pull_request:
+    branches: [web-app, mobile-app]
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-app/api
+    env:
+      DATABASE_URL: postgresql://flownexa:local-dev-only@localhost:5432/flownexa?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx prisma validate --schema ../database/prisma/schema.prisma
+      - run: npm run prisma:generate
+      - run: npm run typecheck
+      - run: npm test -- --coverage
+      - run: npm run lint
+      - run: npm run build
+
+  mobile:
+    if: github.ref == 'refs/heads/mobile-app' || github.base_ref == 'mobile-app'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx expo install --check
+      - run: npm run typecheck
