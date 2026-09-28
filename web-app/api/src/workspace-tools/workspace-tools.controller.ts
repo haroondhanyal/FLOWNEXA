@@ -12,12 +12,12 @@ class DeviceTokenDto { @IsString() @MaxLength(512) token!: string; }
 @Controller("organizations/:organizationId") @UseGuards(JwtAuthGuard)
 export class WorkspaceToolsController {
   constructor(private readonly service: WorkspaceToolsService) {}
-  @Get("reviews") reviews(@Req() req: AuthRequest, @Param("organizationId") orgId: string) { return this.service.reviews(req.user.sub, orgId); }
+  @Get("reviews") reviews(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Query("workspaceId") workspaceId?: string) { return this.service.reviews(req.user.sub, orgId, workspaceId); }
   @Post("tasks/:taskId/reviews") requestReview(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Param("taskId") taskId: string) { return this.service.requestReview(req.user.sub, orgId, taskId); }
   @Patch("reviews/:reviewId") decideReview(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Param("reviewId") reviewId: string, @Body() body: ReviewDto) { return this.service.decideReview(req.user.sub, orgId, reviewId, body); }
-  @Get("audit-history") audit(@Req() req: AuthRequest, @Param("organizationId") orgId: string) { return this.service.audit(req.user.sub, orgId); }
-  @Get("reports/summary") report(@Req() req: AuthRequest, @Param("organizationId") orgId: string) { return this.service.report(req.user.sub, orgId); }
-  @Get("search") search(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Query("q") q = "") { return this.service.search(req.user.sub, orgId, typeof q === "string" ? q : ""); }
+  @Get("audit-history") audit(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Query("workspaceId") workspaceId?: string) { return this.service.audit(req.user.sub, orgId, workspaceId); }
+  @Get("reports/summary") report(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Query("workspaceId") workspaceId?: string) { return this.service.report(req.user.sub, orgId, workspaceId); }
+  @Get("search") search(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Query("q") q = "", @Query("workspaceId") workspaceId?: string) { return this.service.search(req.user.sub, orgId, typeof q === "string" ? q : "", workspaceId); }
   @Get("notifications") notifications(@Req() req: AuthRequest, @Param("organizationId") orgId: string) { return this.service.notifications(req.user.sub, orgId); }
   @Patch("notifications/:notificationId/read") markRead(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Param("notificationId") id: string) { return this.service.markRead(req.user.sub, orgId, id); }
   @Patch("notifications/:notificationId/archive") archive(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Param("notificationId") id: string) { return this.service.archiveNotification(req.user.sub, orgId, id); }

@@ -33,7 +33,7 @@ function safePastedHtml(html: string) {
 }
 
 // NOTES: shared organization notes with a focused rich-text editor and explicit save/delete actions.
-export function NotesScreen({ organizationId, onMessage }: WorkspaceScreenProps) {
+export function NotesScreen({ organizationId, workspaceId, onMessage }: WorkspaceScreenProps & { workspaceId: string }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [title, setTitle] = useState("");
@@ -42,7 +42,7 @@ export function NotesScreen({ organizationId, onMessage }: WorkspaceScreenProps)
   const [preview, setPreview] = useState(false);
   const editor = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
-  const base = `/organizations/${organizationId}/notes`;
+  const base = `/organizations/${organizationId}/workspaces/${workspaceId}/notes`;
   const selected = notes.find((note) => note.id === selectedId);
 
   useEffect(() => {

@@ -146,6 +146,7 @@ For a physical device, use the development computer's LAN address instead of `lo
 - Overview, day/week/month calendar, reports with CSV export, search, notification inbox/read/archive, audit history, and review decisions.
 - Task activity: progress, next action/blocker, URL and private file evidence with image previews, threaded comments, manual time and a start/stop timer.
 - Shared workspace notes with author-aware edit/delete controls, rich text, headings, lists, links, colors/highlights, tables, inline images, and a sandboxed preview.
+- Multi-workspace switcher grouped by organization, workspace-specific project/task/team views, and owner/admin controls to create workspaces or edit their name and logo.
 - Profile and account settings for name, phone, PNG/JPEG profile photo, workspace role visibility, password changes, plus browser-saved light/dark/warm themes, accent colors, and background textures.
 - AI assistant: workspace questions, weekly summaries, daily plan suggestions, and task breakdown suggestions.
 

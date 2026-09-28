@@ -2,6 +2,7 @@
 export type Task = { id: string; title: string; project: string; date: string; state: string };
 export type WorkspaceScreenProps = {
   organizationId: string;
+  workspaceId?: string;
   tasks: Task[];
   query: string;
   onMessage: (message: string) => void;

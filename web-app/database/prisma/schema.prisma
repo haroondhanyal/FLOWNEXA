@@ -158,15 +158,18 @@ model OrganizationMember {
 model WorkspaceNote {
   id             String       @id @default(cuid())
   organizationId String
+  workspaceId    String
   authorId       String
   title          String       @default("Untitled note")
   content        String       @default("") @db.Text
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   author         User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, updatedAt])
+  @@index([workspaceId, updatedAt])
   @@index([authorId])
 }
 
@@ -222,10 +225,12 @@ model Workspace {
   id             String       @id @default(cuid())
   organizationId String
   name           String
+  logoUrl        String?
   createdAt      DateTime     @default(now())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projects       Project[]
   teams          Team[]
+  notes          WorkspaceNote[]
 
   @@unique([organizationId, name])
   @@index([organizationId])

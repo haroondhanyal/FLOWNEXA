@@ -6,10 +6,11 @@ import { apiFetch } from "@/lib/api";
 export type TaskRecord = { id: string; title: string; project: string; projectId?: string; initials: string; person: string; color: string; date: string; state: string; priority: string };
 export type ProjectRecord = { id?: string; name: string; status: string; due: string; lead: string; progress: number };
 export type TeamRecord = { id: string; name: string; email: string; role: string; customRoleId?: string | null; teams: string[] };
-export type TeamGroupRecord = { id: string; name: string; members: { user: { id: string; name: string; email: string } }[] };
+export type TeamGroupRecord = { id: string; name: string; workspaceId?: string; members: { user: { id: string; name: string; email: string } }[] };
 export type WorkUpdateRecord = { task: string; taskId: string; progress: number; note: string; when: string; evidence?: string };
-type Organization = { id: string; name: string; workspaces: { id: string; name: string }[] };
-type ApiTask = { id: string; title: string; status: string; priority: string; dueAt: string | null; project: { id: string; name: string } | null; assignees: { user: { name: string } }[] };
+export type WorkspaceChoice = { id: string; name: string; logoUrl?: string | null };
+export type OrganizationChoice = { id: string; name: string; role?: string; workspaces: WorkspaceChoice[] };
+type ApiTask = { id: string; title: string; status: string; priority: string; dueAt: string | null; project: { id: string; name: string; workspaceId: string } | null; assignees: { user: { name: string } }[] };
 
 const displayTaskStatus: Record<string, string> = { BACKLOG: "Backlog", TODO: "To do", IN_PROGRESS: "In progress", BLOCKED: "Blocked", READY_FOR_REVIEW: "In review", CHANGES_REQUESTED: "Changes requested", COMPLETED: "Completed", REOPENED: "Reopened", CANCELLED: "Cancelled" };
 const apiTaskStatus: Record<string, string> = { "Backlog": "BACKLOG", "To do": "TODO", "In progress": "IN_PROGRESS", "Blocked": "BLOCKED", "In review": "READY_FOR_REVIEW", "Changes requested": "CHANGES_REQUESTED", "Completed": "COMPLETED", "Reopened": "REOPENED", "Cancelled": "CANCELLED" };
@@ -20,6 +21,8 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
   const [organizationId, setOrganizationId] = useState("");
   const [organizationName, setOrganizationName] = useState("FlowNexa workspace");
   const [workspaceId, setWorkspaceId] = useState("");
+  const [organizations, setOrganizations] = useState<OrganizationChoice[]>([]);
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceChoice | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id?: string; name: string; email: string; phoneNumber?: string | null; avatarUrl?: string | null; role?: string; organizationName?: string | null; emailVerifiedAt?: string | null }>({ name: "", email: "" });
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
   const [projectRecords, setProjectRecords] = useState<ProjectRecord[]>([]);
@@ -32,7 +35,7 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
     async function loadWorkspace() {
       try {
         const [organizations, user] = await Promise.all([
-          apiFetch<Organization[]>("/organizations"),
+          apiFetch<OrganizationChoice[]>("/organizations"),
           apiFetch<{ id: string; name: string; email: string; phoneNumber?: string | null; avatarUrl?: string | null; role?: string; organizationName?: string | null; emailVerifiedAt?: string | null }>("/auth/me"),
         ]);
         if (cancelled) return;
@@ -40,14 +43,20 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
 
         const requestedId = sessionStorage.getItem("flownexa-selected-org");
         const organization = organizations.find((item) => item.id === requestedId) ?? organizations[0];
+        const requestedWorkspace = sessionStorage.getItem("flownexa-selected-workspace");
+        const activeSpace = organization.workspaces.find((item) => item.id === requestedWorkspace) ?? organization.workspaces[0];
+        if (!activeSpace) { window.location.replace("/onboarding"); return; }
+        setOrganizations(organizations);
+        setActiveWorkspace(activeSpace);
         sessionStorage.removeItem("flownexa-selected-org");
+        sessionStorage.removeItem("flownexa-selected-workspace");
         setOrganizationId(organization.id);
         setOrganizationName(organization.name);
-        setWorkspaceId(organization.workspaces[0]?.id ?? "");
-        setCurrentUser(user);
+        setWorkspaceId(activeSpace.id);
+        setCurrentUser({ ...user, role: organization.role, organizationName: organization.name });
 
         const [projects, tasks, teams, members, updates] = await Promise.all([
-          apiFetch<{ id: string; name: string; status: string; targetDate: string | null; creator: { name: string }; _count: { tasks: number } }[]>(`/organizations/${organization.id}/projects`),
+          apiFetch<{ id: string; name: string; status: string; targetDate: string | null; workspaceId: string; creator: { name: string }; _count: { tasks: number } }[]>(`/organizations/${organization.id}/projects`),
           apiFetch<ApiTask[]>(`/organizations/${organization.id}/tasks`),
           apiFetch<TeamGroupRecord[]>(`/organizations/${organization.id}/teams`),
           apiFetch<TeamRecord[]>(`/organizations/${organization.id}/members`),
@@ -55,17 +64,20 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
         ]);
         if (cancelled) return;
 
-        setProjectRecords(projects.map((project) => {
-          const related = tasks.filter((task) => task.project?.id === project.id);
+        const workspaceProjects = projects.filter((project) => project.workspaceId === activeSpace.id);
+        const workspaceTasks = tasks.filter((task) => task.project?.workspaceId === activeSpace.id);
+        setProjectRecords(workspaceProjects.map((project) => {
+          const related = workspaceTasks.filter((task) => task.project?.id === project.id);
           return { id: project.id, name: project.name, status: project.status.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()), due: project.targetDate ? new Date(project.targetDate).toLocaleDateString() : "No date", lead: project.creator?.name ?? user.name, progress: related.length ? Math.round(related.filter((task) => task.status === "COMPLETED").length / related.length * 100) : 0 };
         }));
-        setTaskRecords(tasks.map((task) => {
+        setTaskRecords(workspaceTasks.map((task) => {
           const person = task.assignees[0]?.user.name ?? "Unassigned";
           return { id: task.id, title: task.title, project: task.project?.name ?? "No project", projectId: task.project?.id, initials: person === "Unassigned" ? "--" : person.split(" ").map((part) => part[0]).join("").slice(0, 2), person, color: "lavender", date: task.dueAt ? new Date(task.dueAt).toLocaleDateString() : "No date", state: displayTaskStatus[task.status] ?? task.status, priority: task.priority[0] + task.priority.slice(1).toLowerCase() };
         }));
-        setTeamGroups(teams);
+        setTeamGroups(teams.filter((team) => team.workspaceId === activeSpace.id));
         setTeamRecords(members);
-        setWorkUpdates(updates.map((update) => ({ task: update.task.title, taskId: update.task.id, progress: update.progress, note: update.completed, when: new Date(update.submittedAt).toLocaleString(), evidence: update.evidence[0]?.storageKey })));
+        const taskIds = new Set(workspaceTasks.map((task) => task.id));
+        setWorkUpdates(updates.filter((update) => taskIds.has(update.task.id)).map((update) => ({ task: update.task.title, taskId: update.task.id, progress: update.progress, note: update.completed, when: new Date(update.submittedAt).toLocaleString(), evidence: update.evidence[0]?.storageKey })));
         setReady(true);
       } catch {
         if (!cancelled) window.location.replace("/login");
@@ -116,5 +128,5 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
     catch (cause) { onMessage(cause instanceof Error ? cause.message : "Project update failed"); }
   };
 
-  return { ready, organizationId, organizationName, workspaceId, currentUser, setCurrentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, teamGroups, setTeamGroups, workUpdates, visibleTasks, createTask, changeTaskStatus, changeProjectStatus };
+  return { ready, organizationId, organizationName, workspaceId, organizations, setOrganizations, activeWorkspace, setActiveWorkspace, currentUser, setCurrentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, teamGroups, setTeamGroups, workUpdates, visibleTasks, createTask, changeTaskStatus, changeProjectStatus };
 }

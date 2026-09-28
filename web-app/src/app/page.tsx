@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- Profile photos are API-provided data URLs and private blob URLs. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { apiFetch } from "@/lib/api";
 import { AuditScreen, BoardScreen, CalendarScreen, InboxScreen, InviteMemberScreen, MyDayScreen, NotesScreen, OverviewScreen, ProfileSettingsScreen, ProjectCreateScreen, ProjectListScreen, ReportsScreen, ReviewsScreen, RolesScreen, SearchScreen, TaskActivityScreen, TaskListScreen, TeamMembersScreen } from "@/components/screens";
 import { AiAssistantScreen } from "@/components/AiAssistantScreen";
@@ -28,8 +29,30 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const notify = useCallback((message: string) => { setToast(message); window.setTimeout(() => setToast(""), 3000); }, []);
-  const { ready, organizationId, organizationName, workspaceId, currentUser, setCurrentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, teamGroups, setTeamGroups, workUpdates, visibleTasks, createTask, changeTaskStatus, changeProjectStatus } = useWorkspaceData(query, notify, () => setShowCreate(false));
+  const { ready, organizationId, organizationName, workspaceId, organizations, setOrganizations, activeWorkspace, setActiveWorkspace, currentUser, setCurrentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, teamGroups, setTeamGroups, workUpdates, visibleTasks, createTask, changeTaskStatus, changeProjectStatus } = useWorkspaceData(query, notify, () => setShowCreate(false));
+  const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
+  const [workspaceDialog, setWorkspaceDialog] = useState<"create" | "edit" | null>(null);
+  const [workspaceNameInput, setWorkspaceNameInput] = useState("");
+  const [workspaceLogoFile, setWorkspaceLogoFile] = useState<File>();
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const signOut = async () => { try { await apiFetch("/auth/logout", { method: "POST", auth: false }); } catch { /* Clear this browser session even if the API is offline. */ } sessionStorage.removeItem("flownexa-access-token"); window.location.assign("/login"); };
+  const switchWorkspace = (orgId: string, nextWorkspaceId: string) => { sessionStorage.setItem("flownexa-selected-org", orgId); sessionStorage.setItem("flownexa-selected-workspace", nextWorkspaceId); window.location.assign("/"); };
+  const openWorkspaceDialog = (mode: "create" | "edit") => { setWorkspaceNameInput(mode === "edit" ? activeWorkspace?.name ?? "" : ""); setWorkspaceLogoFile(undefined); setWorkspaceDialog(mode); setShowWorkspaceMenu(false); };
+  const saveWorkspace = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setWorkspaceBusy(true);
+    try {
+      let updated;
+      if (workspaceDialog === "create") {
+        updated = await apiFetch<{ id: string; name: string; logoUrl?: string | null }>(`/organizations/${organizationId}/workspaces`, { method: "POST", body: JSON.stringify({ name: workspaceNameInput }) });
+        sessionStorage.setItem("flownexa-selected-org", organizationId); sessionStorage.setItem("flownexa-selected-workspace", updated.id); window.location.assign("/"); return;
+      }
+      if (!activeWorkspace) return;
+      const body = new FormData(); body.set("name", workspaceNameInput); if (workspaceLogoFile) body.set("logo", workspaceLogoFile);
+      updated = await apiFetch<{ id: string; name: string; logoUrl?: string | null }>(`/organizations/${organizationId}/workspaces/${activeWorkspace.id}`, { method: "PATCH", body });
+      setActiveWorkspace(updated); setOrganizations((items) => items.map((organization) => organization.id === organizationId ? { ...organization, workspaces: organization.workspaces.map((workspace) => workspace.id === updated.id ? updated : workspace) } : organization)); setWorkspaceDialog(null); notify("Workspace updated");
+    } catch (error) { notify(error instanceof Error ? error.message : "Workspace could not be saved"); }
+    finally { setWorkspaceBusy(false); }
+  };
   // KEYBOARD SHORTCUTS: make command search and quick-create actions available globally.
   useEffect(() => {
     const root = document.documentElement;
@@ -49,7 +72,9 @@ export default function Home() {
   return <main className="app-shell">
     <aside className="sidebar">
       <a className="brand" href="#home"><span className="brand-mark"><span /><span /><span /><span /></span><span>flow<span className="brand-light">nexa</span></span><PanelLeftClose size={17} className="collapse" /></a>
-      <button className="org-switch" onClick={()=>window.location.assign("/onboarding")} title="Set up an organization"><span className="org-icon">{organizationName[0]?.toUpperCase()}</span><span className="org-copy"><b>{organizationName}</b><small>Workspace</small></span><ChevronDown size={15} /></button>
+      <div className="workspace-switcher"><button className="org-switch" aria-expanded={showWorkspaceMenu} onClick={() => setShowWorkspaceMenu((shown) => !shown)} title="Switch or manage workspaces"><span className="org-icon">{activeWorkspace?.logoUrl ? <img src={activeWorkspace.logoUrl} alt="" /> : activeWorkspace?.name[0]?.toUpperCase()}</span><span className="org-copy"><b>{activeWorkspace?.name ?? "Select workspace"}</b><small>{organizationName} · Workspace</small></span><ChevronDown size={15} /></button>
+        {showWorkspaceMenu && <div className="workspace-popover"><div className="workspace-popover-title"><b>Switch workspace</b><button aria-label="Close workspace menu" onClick={() => setShowWorkspaceMenu(false)}><X size={15}/></button></div>{organizations.map((organization) => <section className="workspace-org-group" key={organization.id}><small>{organization.name}</small>{organization.workspaces.map((workspace) => <div className={`workspace-option ${organization.id === organizationId && workspace.id === workspaceId ? "selected" : ""}`} key={workspace.id}><button onClick={() => switchWorkspace(organization.id, workspace.id)}><span className="workspace-option-icon">{workspace.logoUrl ? <img src={workspace.logoUrl} alt=""/> : workspace.name[0]?.toUpperCase()}</span><span>{workspace.name}</span>{organization.id === organizationId && workspace.id === workspaceId && <Check size={14}/>}</button>{organization.id === organizationId && workspace.id === workspaceId && (organization.role === "OWNER" || organization.role === "ADMIN") && <button className="workspace-edit-button" onClick={() => openWorkspaceDialog("edit")}>Edit</button>}</div>)}</section>)}{(organizations.find((item) => item.id === organizationId)?.role === "OWNER" || organizations.find((item) => item.id === organizationId)?.role === "ADMIN") && <button className="workspace-add-button" onClick={() => openWorkspaceDialog("create")}><Plus size={15}/> New workspace</button>}</div>}
+      </div>
       <button className="create-button" onClick={() => setShowCreate(true)}><CirclePlus size={17} /> Create new <span className="plus-shortcut">⌘ N</span></button>
       <nav>{nav.map((group) => <section className="nav-group" key={group.label}><p className="nav-label">{group.label}</p>{group.items.map(({ name, icon: Icon }) => <button key={name} className={`nav-item ${active === name ? "selected" : ""}`} onClick={() => setActive(name)}><Icon size={17} strokeWidth={1.8} /><span>{name}</span></button>)}</section>)}
         <section className="nav-group"><p className="nav-label">Your projects <button aria-label="Add project" onClick={() => setActive("Projects")}><Plus size={14}/></button></p>{projectRecords.slice(0,4).map((project,index)=><button className="project-link" key={project.name} onClick={()=>setActive("Projects")}><i className={`project-dot ${["purple","orange","green","blue"][index%4]}`}/>{project.name}</button>)}</section>
@@ -63,7 +88,7 @@ export default function Home() {
       <div className={`content content-${active.replaceAll(" ", "-")}`} id="home">
         {active !== "Overview" && <section className="workspace-view"><div className="view-heading"><div><div className="eyebrow">FLOWNEXA WORKSPACE</div><h1>{active}</h1><p className="welcome-sub">Manage your {active.toLowerCase()} across {organizationName}.</p></div><div className="view-actions">{(active === "Projects" || active === "Teams" || active === "My work") && <button className="primary-button" onClick={() => active === "My work" ? setShowCreate(true) : active === "Projects" ? setActive("New project") : setActive("Invite member")}><Plus size={16}/>{active === "My work" ? "Create task" : active === "Projects" ? "New project" : "Invite member"}</button>}</div></div>
           {/* SEARCH SCREEN: find organization tasks and projects from one place. */}
-          {active === "Search" && <SearchScreen organizationId={organizationId} tasks={taskRecords} query={query} onMessage={notify}/>}
+          {active === "Search" && <SearchScreen organizationId={organizationId} workspaceId={workspaceId} tasks={taskRecords} query={query} onMessage={notify}/>}
           {/* AI ASSISTANT SCREEN: answer questions using the API's organization-scoped context. */}
           {active === "AI assistant" && <AiAssistantScreen organizationId={organizationId}/>}
           {/* MY WORK SCREEN: list tasks and let a teammate make a basic status change. */}
@@ -85,19 +110,19 @@ export default function Home() {
           {/* CALENDAR SCREEN: show upcoming due dates across this organization's tasks. */}
           {active === "Calendar" && <CalendarScreen organizationId={organizationId} tasks={taskRecords} query={query} onMessage={notify}/>}
           {/* REPORTS SCREEN: make persisted task and time totals visible to workspace leads. */}
-          {active === "Reports" && <ReportsScreen organizationId={organizationId} tasks={taskRecords} query={query} onMessage={notify}/>}
+          {active === "Reports" && <ReportsScreen organizationId={organizationId} workspaceId={workspaceId} tasks={taskRecords} query={query} onMessage={notify}/>}
           {/* REVIEWS SCREEN: help managers make and explain decisions on submitted work. */}
-          {active === "Reviews" && <ReviewsScreen organizationId={organizationId} tasks={taskRecords} query={query} onMessage={notify}/>}
+          {active === "Reviews" && <ReviewsScreen organizationId={organizationId} workspaceId={workspaceId} tasks={taskRecords} query={query} onMessage={notify}/>}
           {/* AUDIT SCREEN: keep a read-only trail for accountability and troubleshooting. */}
-          {active === "Audit history" && <AuditScreen organizationId={organizationId} tasks={taskRecords} query={query} onMessage={notify}/>}
+          {active === "Audit history" && <AuditScreen organizationId={organizationId} workspaceId={workspaceId} tasks={taskRecords} query={query} onMessage={notify}/>}
           {/* INBOX SCREEN: collect review notifications and let each person track what they read. */}
           {active === "Inbox" && <InboxScreen organizationId={organizationId} tasks={taskRecords} query={query} onMessage={notify}/>}
           {/* WORK UPDATES SCREEN: record progress and supporting context on a selected task. */}
           {active === "Work updates" && <TaskActivityScreen organizationId={organizationId} tasks={taskRecords} query={query} onMessage={notify}/>}
           {/* NOTES SCREEN: create, edit, format, preview, and delete shared workspace notes. */}
-          {active === "Notes" && <NotesScreen organizationId={organizationId} tasks={taskRecords} query={query} onMessage={notify}/>}
+          {active === "Notes" && <NotesScreen organizationId={organizationId} workspaceId={workspaceId} tasks={taskRecords} query={query} onMessage={notify}/>}
           {/* PROFILE SCREEN: update personal details, account security, role information, and local appearance preferences. */}
-          {active === "Profile & account" && <ProfileSettingsScreen user={currentUser} onSaved={setCurrentUser} onMessage={notify}/>}
+          {active === "Profile & account" && <ProfileSettingsScreen user={currentUser} onSaved={(saved) => setCurrentUser((current) => ({ ...current, ...saved }))} onMessage={notify}/>}
           {active === "Help & support" && <div className="form-card"><h2>FlowNexa help</h2><p>Get help with project setup, tasks, reviews, and team access. Report an issue or request product support through the project issue board.</p><a className="primary-button" href="https://github.com/haroondhanyal/FLOWNEXA/issues" target="_blank" rel="noreferrer">Open support issues <ArrowRight size={15}/></a></div>}
           {!["My work","Board","Projects","Teams","Invite member","New project","Work updates","Notes","Profile & account","Roles & access","My day","Calendar","Reports","Reviews","Audit history","Inbox","Search","AI assistant","Help & support"].includes(active) && <div className="empty-state"><Sparkles size={22}/><b>Page not found</b><span>Choose a workspace screen from the navigation.</span></div>}
         </section>}
@@ -106,6 +131,7 @@ export default function Home() {
         <footer className="footer"><span>© 2026 FlowNexa</span><span><i className="live-dot"/> Workspace connected</span><span>Privacy</span><span>Terms</span></footer>
       </div>
     </section>
+    {workspaceDialog && <div className="modal-backdrop" onClick={() => setWorkspaceDialog(null)}><form className="create-modal workspace-modal" onSubmit={(event) => void saveWorkspace(event)} onClick={(event) => event.stopPropagation()}><div className="modal-top"><div><h2>{workspaceDialog === "create" ? "Create a workspace" : "Edit workspace"}</h2><p>{workspaceDialog === "create" ? "Add a separate workspace inside this organization." : "Change the workspace name or add a logo image."}</p></div><button type="button" aria-label="Close" onClick={() => setWorkspaceDialog(null)}><X size={18}/></button></div><label className="field-label">Workspace name<input autoFocus value={workspaceNameInput} onChange={(event) => setWorkspaceNameInput(event.target.value)} minLength={2} maxLength={80} required placeholder="e.g. Product team"/></label>{workspaceDialog === "edit" && <label className="field-label">Workspace logo (PNG or JPEG, up to 1 MB)<input type="file" accept="image/png,image/jpeg" onChange={(event) => setWorkspaceLogoFile(event.target.files?.[0])}/></label>}<div className="modal-bottom"><span>{organizationName}</span><button type="submit" className="primary-button" disabled={workspaceBusy}>{workspaceBusy ? "Saving…" : workspaceDialog === "create" ? "Create workspace" : "Save changes"}</button></div></form></div>}
     {showCreate && <div className="modal-backdrop" onClick={() => setShowCreate(false)}><form className="create-modal" action={createTask} onClick={(event) => event.stopPropagation()}><div className="modal-top"><div><h2>Create a task</h2><p>Add a new task to your workspace</p></div><button type="button" aria-label="Close" onClick={() => setShowCreate(false)}><X size={18}/></button></div><label className="field-label">Task name<input autoFocus name="title" required placeholder="What needs to get done?" /></label><label className="field-label">Project<select name="project" defaultValue=""><option value="" disabled>Select a project</option>{projectRecords.map(p=><option key={p.name} value={p.id}>{p.name}</option>)}</select></label><label className="field-label">Assignees<select name="assigneeIds" multiple size={Math.min(Math.max(teamRecords.length, 2), 5)}>{teamRecords.map((member)=><option key={member.id} value={member.id}>{member.name} · {member.email}</option>)}</select><small>Use Ctrl/Command to select multiple teammates.</small></label><div className="modal-row"><label className="field-label">Priority<select name="priority"><option>Medium</option><option>High</option><option>Urgent</option><option>Low</option></select></label><label className="field-label">Due date<input name="due" type="date"/></label></div><div className="modal-bottom"><span>Task ID assigned automatically</span><button className="primary-button">Create task <ArrowRight size={15}/></button></div></form></div>}
     <RealtimeBridge organizationId={organizationId}/>
     {toast && <div className="toast"><Check size={15}/>{toast}</div>}

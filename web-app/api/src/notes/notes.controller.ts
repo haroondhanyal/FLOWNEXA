@@ -10,12 +10,12 @@ class SaveNoteDto {
 type AuthRequest = { user: { sub: string } };
 
 // NOTES API: all routes check workspace membership, and edits are limited to the author or admins.
-@Controller("organizations/:organizationId/notes")
+@Controller("organizations/:organizationId/workspaces/:workspaceId/notes")
 @UseGuards(JwtAuthGuard)
 export class NotesController {
   constructor(private readonly notes: NotesService) {}
-  @Get() list(@Req() req: AuthRequest, @Param("organizationId") organizationId: string) { return this.notes.list(req.user.sub, organizationId); }
-  @Post() create(@Req() req: AuthRequest, @Param("organizationId") organizationId: string, @Body() body: SaveNoteDto) { return this.notes.create(req.user.sub, organizationId, body.title, body.content); }
-  @Put(":noteId") update(@Req() req: AuthRequest, @Param("organizationId") organizationId: string, @Param("noteId") noteId: string, @Body() body: SaveNoteDto) { return this.notes.update(req.user.sub, organizationId, noteId, body.title, body.content); }
-  @Delete(":noteId") remove(@Req() req: AuthRequest, @Param("organizationId") organizationId: string, @Param("noteId") noteId: string) { return this.notes.remove(req.user.sub, organizationId, noteId); }
+  @Get() list(@Req() req: AuthRequest, @Param("organizationId") organizationId: string, @Param("workspaceId") workspaceId: string) { return this.notes.list(req.user.sub, organizationId, workspaceId); }
+  @Post() create(@Req() req: AuthRequest, @Param("organizationId") organizationId: string, @Param("workspaceId") workspaceId: string, @Body() body: SaveNoteDto) { return this.notes.create(req.user.sub, organizationId, workspaceId, body.title, body.content); }
+  @Put(":noteId") update(@Req() req: AuthRequest, @Param("organizationId") organizationId: string, @Param("workspaceId") workspaceId: string, @Param("noteId") noteId: string, @Body() body: SaveNoteDto) { return this.notes.update(req.user.sub, organizationId, workspaceId, noteId, body.title, body.content); }
+  @Delete(":noteId") remove(@Req() req: AuthRequest, @Param("organizationId") organizationId: string, @Param("workspaceId") workspaceId: string, @Param("noteId") noteId: string) { return this.notes.remove(req.user.sub, organizationId, workspaceId, noteId); }
 }

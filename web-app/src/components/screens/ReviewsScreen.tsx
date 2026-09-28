@@ -6,9 +6,9 @@ import type { WorkspaceScreenProps } from "./types";
 
 type Review = { id: string; status: string; comment?: string; task: { id: string; title: string; status: string; project?: { name: string } }; reviewer: { name: string } };
 // REVIEWS SCREEN: lets managers approve work or request changes with a written reason.
-export function ReviewsScreen({ organizationId, onMessage }: WorkspaceScreenProps) {
+export function ReviewsScreen({ organizationId, workspaceId, onMessage }: WorkspaceScreenProps) {
   const [reviews, setReviews] = useState<Review[]>([]);
-  const refresh = useCallback(() => apiFetch<Review[]>(`/organizations/${organizationId}/reviews`).then(setReviews).catch(() => setReviews([])), [organizationId]);
+  const refresh = useCallback(() => apiFetch<Review[]>(`/organizations/${organizationId}/reviews?workspaceId=${encodeURIComponent(workspaceId ?? "")}`).then(setReviews).catch(() => setReviews([])), [organizationId, workspaceId]);
   useEffect(() => { void refresh(); }, [refresh]);
   const decide = async (review: Review, status: string) => {
     const comment = status === "APPROVED" ? "" : window.prompt("Explain what needs attention:")?.trim();

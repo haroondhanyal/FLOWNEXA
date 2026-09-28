@@ -6,7 +6,26 @@ import { requireOrganizationPermission } from "./access-control";
 @Injectable()
 export class OrganizationsService {
   constructor(private readonly prisma: PrismaService) {}
-  list(userId: string) { return this.prisma.organization.findMany({ where: { members: { some: { userId } } }, include: { workspaces: true, _count: { select: { members: true, projects: true } } }, orderBy: { createdAt: "asc" } }); }
+  async list(userId: string) { const organizations = await this.prisma.organization.findMany({ where: { members: { some: { userId } } }, include: { workspaces: true, members: { where: { userId }, select: { role: true } }, _count: { select: { members: true, projects: true } } }, orderBy: { createdAt: "asc" } }); return organizations.map(({ members, ...organization }) => ({ ...organization, role: members[0]?.role ?? "MEMBER" })); }
+  // WORKSPACE MANAGEMENT: only org owners/admins may create shared spaces or change their branding.
+  private async workspaceAdmin(userId: string, organizationId: string) {
+    const member = await this.prisma.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } } });
+    if (!member) throw new NotFoundException("Organization not found");
+    if (member.role !== "OWNER" && member.role !== "ADMIN") throw new ForbiddenException("Only workspace owners or admins can manage workspaces");
+    return member;
+  }
+  async createWorkspace(userId: string, organizationId: string, name: string) {
+    await this.workspaceAdmin(userId, organizationId);
+    try { return await this.prisma.workspace.create({ data: { organizationId, name: name.trim() } }); }
+    catch (error) { if ((error as { code?: string }).code === "P2002") throw new BadRequestException("A workspace with this name already exists"); throw error; }
+  }
+  async updateWorkspace(userId: string, organizationId: string, workspaceId: string, input: { name: string; logoUrl?: string | null }) {
+    await this.workspaceAdmin(userId, organizationId);
+    const workspace = await this.prisma.workspace.findFirst({ where: { id: workspaceId, organizationId }, select: { id: true } });
+    if (!workspace) throw new NotFoundException("Workspace not found");
+    try { return await this.prisma.workspace.update({ where: { id: workspace.id }, data: input }); }
+    catch (error) { if ((error as { code?: string }).code === "P2002") throw new BadRequestException("A workspace with this name already exists"); throw error; }
+  }
   async create(userId: string, input: { name: string; workspaceName: string }) {
     const slugBase = input.name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 42) || "organization";
     const slug = `${slugBase}-${randomUUID().slice(0, 6)}`;

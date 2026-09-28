@@ -12,6 +12,12 @@ export class WorkspaceToolsService {
     if (!member) throw new NotFoundException("Organization not found");
     return member;
   }
+  private async scopedWorkspace(organizationId: string, workspaceId?: string) {
+    if (!workspaceId) return undefined;
+    const workspace = await this.prisma.workspace.findFirst({ where: { id: workspaceId, organizationId }, select: { id: true } });
+    if (!workspace) throw new NotFoundException("Workspace not found");
+    return workspace.id;
+  }
   async requestReview(userId: string, organizationId: string, taskId: string) {
     await requireOrganizationPermission(this.prisma, userId, organizationId, "task.update");
     const task = await this.prisma.task.findFirst({ where: { id: taskId, organizationId, deletedAt: null }, include: { assignees: true } });
@@ -29,9 +35,10 @@ export class WorkspaceToolsService {
     await this.sendPush(recipients, "Work submitted for review", task.title);
     return review;
   }
-  async reviews(userId: string, organizationId: string) {
+  async reviews(userId: string, organizationId: string, workspaceId?: string) {
     await requireOrganizationPermission(this.prisma, userId, organizationId, "task.review");
-    return this.prisma.review.findMany({ where: { task: { organizationId } }, include: { task: { select: { id: true, title: true, status: true, project: { select: { name: true } } } }, reviewer: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 100 });
+    const selectedWorkspace = await this.scopedWorkspace(organizationId, workspaceId);
+    return this.prisma.review.findMany({ where: { task: { organizationId, ...(selectedWorkspace ? { project: { workspaceId: selectedWorkspace } } : {}) } }, include: { task: { select: { id: true, title: true, status: true, project: { select: { name: true } } } }, reviewer: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 100 });
   }
   async decideReview(userId: string, organizationId: string, reviewId: string, input: { status: "APPROVED" | "CHANGES_REQUESTED" | "REJECTED"; comment?: string }) {
     await requireOrganizationPermission(this.prisma, userId, organizationId, "task.review");
@@ -53,25 +60,27 @@ export class WorkspaceToolsService {
     await this.sendPush(recipients, `Review ${input.status.toLowerCase().replaceAll("_", " ")}`, review.task.title);
     return result;
   }
-  async audit(userId: string, organizationId: string) { await requireOrganizationPermission(this.prisma, userId, organizationId, "audit.view"); return this.prisma.auditLog.findMany({ where: { organizationId }, include: { user: { select: { name: true } }, task: { select: { title: true } } }, orderBy: { createdAt: "desc" }, take: 100 }); }
-  async report(userId: string, organizationId: string) {
+  async audit(userId: string, organizationId: string, workspaceId?: string) { await requireOrganizationPermission(this.prisma, userId, organizationId, "audit.view"); const selectedWorkspace = await this.scopedWorkspace(organizationId, workspaceId); return this.prisma.auditLog.findMany({ where: { organizationId, ...(selectedWorkspace ? { OR: [{ task: { project: { workspaceId: selectedWorkspace } } }, { taskId: null }] } : {}) }, include: { user: { select: { name: true } }, task: { select: { title: true } } }, orderBy: { createdAt: "desc" }, take: 100 }); }
+  async report(userId: string, organizationId: string, workspaceId?: string) {
     await requireOrganizationPermission(this.prisma, userId, organizationId, "report.view");
-    const tasks = await this.prisma.task.findMany({ where: { organizationId, deletedAt: null }, select: { status: true, dueAt: true, updatedAt: true } });
-    const time = await this.prisma.timeEntry.aggregate({ where: { task: { organizationId } }, _sum: { durationMinutes: true } });
+    const selectedWorkspace = await this.scopedWorkspace(organizationId, workspaceId);
+    const tasks = await this.prisma.task.findMany({ where: { organizationId, deletedAt: null, ...(selectedWorkspace ? { project: { workspaceId: selectedWorkspace } } : {}) }, select: { status: true, dueAt: true, updatedAt: true } });
+    const time = await this.prisma.timeEntry.aggregate({ where: { task: { organizationId, ...(selectedWorkspace ? { project: { workspaceId: selectedWorkspace } } : {}) } }, _sum: { durationMinutes: true } });
     const counts: Record<string, number> = {};
     for (const task of tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
     const now = new Date();
     const endOfWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     return { total: tasks.length, counts, overdue: tasks.filter((task) => task.dueAt && task.dueAt < now && task.status !== "COMPLETED" && task.status !== "CANCELLED").length, blocked: counts.BLOCKED ?? 0, awaitingReview: counts.READY_FOR_REVIEW ?? 0, upcoming: tasks.filter((task) => task.dueAt && task.dueAt >= now && task.dueAt <= endOfWeek && task.status !== "COMPLETED" && task.status !== "CANCELLED").length, completedThisWeek: tasks.filter((task) => task.status === "COMPLETED" && task.updatedAt >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)).length, trackedMinutes: time._sum.durationMinutes ?? 0 };
   }
-  async search(userId: string, organizationId: string, query: string) {
+  async search(userId: string, organizationId: string, query: string, workspaceId?: string) {
     await this.member(userId, organizationId);
+    const selectedWorkspace = await this.scopedWorkspace(organizationId, workspaceId);
     const term = query.trim().slice(0, 100);
     if (term.length < 2) return { tasks: [], projects: [], comments: [] };
     const [tasks, projects, comments] = await Promise.all([
-      this.prisma.task.findMany({ where: { organizationId, deletedAt: null, title: { contains: term, mode: "insensitive" } }, select: { id: true, title: true, status: true }, take: 20 }),
-      this.prisma.project.findMany({ where: { organizationId, name: { contains: term, mode: "insensitive" } }, select: { id: true, name: true, status: true }, take: 20 }),
-      this.prisma.comment.findMany({ where: { body: { contains: term, mode: "insensitive" }, task: { organizationId, deletedAt: null } }, select: { id: true, body: true, task: { select: { id: true, title: true } }, author: { select: { name: true } } }, take: 20, orderBy: { createdAt: "desc" } }),
+      this.prisma.task.findMany({ where: { organizationId, deletedAt: null, title: { contains: term, mode: "insensitive" }, ...(selectedWorkspace ? { project: { workspaceId: selectedWorkspace } } : {}) }, select: { id: true, title: true, status: true }, take: 20 }),
+      this.prisma.project.findMany({ where: { organizationId, name: { contains: term, mode: "insensitive" }, ...(selectedWorkspace ? { workspaceId: selectedWorkspace } : {}) }, select: { id: true, name: true, status: true }, take: 20 }),
+      this.prisma.comment.findMany({ where: { body: { contains: term, mode: "insensitive" }, task: { organizationId, deletedAt: null, ...(selectedWorkspace ? { project: { workspaceId: selectedWorkspace } } : {}) } }, select: { id: true, body: true, task: { select: { id: true, title: true } }, author: { select: { name: true } } }, take: 20, orderBy: { createdAt: "desc" } }),
     ]);
     return { tasks, projects, comments };
   }
