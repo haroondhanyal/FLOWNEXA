@@ -51,7 +51,15 @@ export class AuthService {
     if (!token) return;
     try { const payload = await this.jwt.verifyAsync(token, { secret: process.env.JWT_REFRESH_SECRET!, issuer: "flownexa-api", audience: "flownexa-refresh" }); if (payload.sid) await this.prisma.session.updateMany({ where: { id: payload.sid, revokedAt: null }, data: { revokedAt: new Date() } }); } catch { /* Expired and invalid tokens are already unusable. */ }
   }
-  async me(id: string) { const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true, email: true, name: true, avatarUrl: true } }); if (!user) throw new UnauthorizedException(); return user; }
+  async me(id: string) { const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true, email: true, name: true, avatarUrl: true, phoneNumber: true, emailVerifiedAt: true, memberships: { select: { role: true, organization: { select: { name: true } } }, orderBy: { createdAt: "asc" }, take: 1 } } }); if (!user) throw new UnauthorizedException(); return { ...user, role: user.memberships[0]?.role ?? "MEMBER", organizationName: user.memberships[0]?.organization.name ?? null, memberships: undefined }; }
+  async updateProfile(id: string, data: { name: string; phoneNumber: string; avatarUrl?: string | null }) { return this.prisma.user.update({ where: { id }, data, select: { id: true, email: true, name: true, avatarUrl: true, phoneNumber: true } }); }
+  async changePassword(id: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { passwordHash: true } });
+    if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) throw new UnauthorizedException("Current password is incorrect");
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.$transaction([this.prisma.user.update({ where: { id }, data: { passwordHash } }), this.prisma.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } })]);
+    return { ok: true };
+  }
 
   // ACCOUNT RECOVERY: store only hashed one-time tokens and revoke active sessions after a password reset.
   private tokenHash(token: string) { return createHash("sha256").update(token).digest("hex"); }

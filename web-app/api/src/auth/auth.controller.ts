@@ -1,9 +1,12 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Patch, Post, Req, Res, UploadedFile, UseGuards } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { UseInterceptors } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
-import { ForgotPasswordDto, LoginDto, RegisterDto, ResetPasswordDto, VerifyEmailDto } from "./dto";
+import { ChangePasswordDto, ForgotPasswordDto, LoginDto, RegisterDto, ResetPasswordDto, UpdateProfileDto, VerifyEmailDto } from "./dto";
 import { Throttle } from "@nestjs/throttler";
+type AvatarFile = { buffer: Buffer };
 @Controller("auth")
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
@@ -18,4 +21,15 @@ export class AuthController {
   @Post("verify-email") @Throttle({ default: { limit: 8, ttl: 60000 } }) verifyEmail(@Body() body: VerifyEmailDto) { return this.auth.verifyEmail(body.token); }
   @Post("verification-email") @UseGuards(JwtAuthGuard) @Throttle({ default: { limit: 3, ttl: 60000 } }) requestVerification(@Req() req: { user: { sub: string } }) { return this.auth.requestEmailVerification(req.user.sub); }
   @Get("me") @UseGuards(JwtAuthGuard) me(@Req() req: { user: { sub: string } }) { return this.auth.me(req.user.sub); }
+  @Patch("me") @UseGuards(JwtAuthGuard) @UseInterceptors(FileInterceptor("avatar", { limits: { fileSize: 2 * 1024 * 1024 } })) async updateMe(@Req() req: { user: { sub: string } }, @Body() body: UpdateProfileDto, @UploadedFile() avatar?: AvatarFile) {
+    let avatarUrl: string | null | undefined;
+    if (avatar) {
+      const png = avatar.buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      const jpeg = avatar.buffer[0] === 0xff && avatar.buffer[1] === 0xd8 && avatar.buffer[2] === 0xff;
+      if (!png && !jpeg) throw new BadRequestException("Profile photos must be PNG or JPEG images");
+      avatarUrl = `data:${png ? "image/png" : "image/jpeg"};base64,${avatar.buffer.toString("base64")}`;
+    } else if (body.clearAvatar === "true") avatarUrl = null;
+    return this.auth.updateProfile(req.user.sub, { name: body.name.trim(), phoneNumber: body.phoneNumber.trim(), ...(avatarUrl !== undefined ? { avatarUrl } : {}) });
+  }
+  @Patch("password") @UseGuards(JwtAuthGuard) changePassword(@Req() req: { user: { sub: string } }, @Body() body: ChangePasswordDto) { return this.auth.changePassword(req.user.sub, body.currentPassword, body.newPassword); }
 }

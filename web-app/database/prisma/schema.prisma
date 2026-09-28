@@ -69,6 +69,7 @@ model User {
   name            String
   passwordHash    String
   avatarUrl       String?
+  phoneNumber     String?
   emailVerifiedAt DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
@@ -88,6 +89,7 @@ model User {
   deviceTokens    DeviceToken[]
   teamMemberships TeamMember[]
   sentInvitations OrganizationInvitation[] @relation("InvitationSender")
+  notes           WorkspaceNote[]
 
   @@index([createdAt])
 }
@@ -132,6 +134,7 @@ model Organization {
   notifications Notification[]
   customRoles   CustomRole[]
   invitations   OrganizationInvitation[]
+  notes         WorkspaceNote[]
 
   @@index([name])
 }
@@ -149,6 +152,22 @@ model OrganizationMember {
 
   @@unique([organizationId, userId])
   @@index([userId, role])
+}
+
+// WORKSPACE NOTES: team notes belong to an organization and retain their author for attribution.
+model WorkspaceNote {
+  id             String       @id @default(cuid())
+  organizationId String
+  authorId       String
+  title          String       @default("Untitled note")
+  content        String       @default("") @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author         User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, updatedAt])
+  @@index([authorId])
 }
 
 model OrganizationInvitation {

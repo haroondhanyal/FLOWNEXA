@@ -12,6 +12,7 @@ import { HealthController } from "./health.controller";
 import { WorkspaceToolsModule } from "./workspace-tools/workspace-tools.module";
 import { AiModule } from "./ai/ai.module";
 import { EventsModule } from "./events/events.module";
+import { NotesModule } from "./notes/notes.module";
 
-@Module({ imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ["../.env", ".env"] }), ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]), PrismaModule, AuthModule, OrganizationsModule, ProjectsModule, TasksModule, WorkUpdatesModule, WorkspaceToolsModule, AiModule, EventsModule], controllers: [HealthController], providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }] })
+@Module({ imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ["../.env", ".env"] }), ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]), PrismaModule, AuthModule, OrganizationsModule, ProjectsModule, TasksModule, WorkUpdatesModule, WorkspaceToolsModule, AiModule, EventsModule, NotesModule], controllers: [HealthController], providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }] })
 export class AppModule {}

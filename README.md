@@ -143,8 +143,10 @@ For a physical device, use the development computer's LAN address instead of `lo
 ### Web workspace
 
 - Sign in/register, session refresh, expiring one-time email verification/password reset, workspace setup, projects, team management/invites, custom roles, and task assignment/status changes.
-- Overview, month calendar, reports with CSV export, search, notification inbox/read/archive, audit history, and review decisions.
-- Task activity: progress, next action/blocker, URL and private file evidence, threaded comments, manual time and a start/stop timer.
+- Overview, day/week/month calendar, reports with CSV export, search, notification inbox/read/archive, audit history, and review decisions.
+- Task activity: progress, next action/blocker, URL and private file evidence with image previews, threaded comments, manual time and a start/stop timer.
+- Shared workspace notes with author-aware edit/delete controls, rich text, headings, lists, links, colors/highlights, tables, inline images, and a sandboxed preview.
+- Profile and account settings for name, phone, PNG/JPEG profile photo, workspace role visibility, password changes, plus browser-saved light/dark/warm themes, accent colors, and background textures.
 - AI assistant: workspace questions, weekly summaries, daily plan suggestions, and task breakdown suggestions.
 
 ### Mobile workspace
@@ -182,7 +184,7 @@ This is an active product foundation, not a claim that every enterprise producti
 - Custom organization roles now enforce permissions across task/project/team changes, invitations, reviews, evidence, reports, and audit access. Invitation listing, resend (with token rotation), and revoke are available. Password reset and email verification flows use hashed, expiring, single-use tokens; configure `RESEND_API_KEY`, a verified `EMAIL_FROM`, and `WEB_APP_URL` in the API environment. Set `REQUIRE_EMAIL_VERIFICATION=true` to gate new registrations and sign-ins on verification.
 - Organization member directory, team creation, team membership management, and invitation lifecycle controls are implemented. Broader member administration remains future work.
 - Private API-served evidence uploads (PNG/JPEG/PDF/UTF-8 text, 10 MB limit) use randomized filenames, content-signature checks, permission-gated downloads, and a persistent Docker volume. S3-compatible object storage/signing and file malware scanning remain production deployment work; mobile camera images are still local drafts.
-- Per-event notification preferences, resilient queued/retry push delivery, and broader browser end-to-end coverage.
+- Per-event notification preferences, resilient queued/retry push delivery, and broader browser end-to-end coverage. Profile photos are currently stored as small data URLs in the user record; move them to private object storage for production-scale accounts.
 - Hosted production secrets/database, deployment configuration, monitoring, backups, and operational runbooks.
 
 Keep API keys and production secrets out of client bundles and Git. Configure `AI_API_KEY` and `AI_MODEL` only in the API environment when enabling AI. Email delivery uses the Resend API from the server only.

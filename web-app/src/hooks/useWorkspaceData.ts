@@ -20,7 +20,7 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
   const [organizationId, setOrganizationId] = useState("");
   const [organizationName, setOrganizationName] = useState("FlowNexa workspace");
   const [workspaceId, setWorkspaceId] = useState("");
-  const [currentUser, setCurrentUser] = useState({ name: "", email: "" });
+  const [currentUser, setCurrentUser] = useState<{ id?: string; name: string; email: string; phoneNumber?: string | null; avatarUrl?: string | null; role?: string; organizationName?: string | null; emailVerifiedAt?: string | null }>({ name: "", email: "" });
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
   const [projectRecords, setProjectRecords] = useState<ProjectRecord[]>([]);
   const [teamRecords, setTeamRecords] = useState<TeamRecord[]>([]);
@@ -33,7 +33,7 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
       try {
         const [organizations, user] = await Promise.all([
           apiFetch<Organization[]>("/organizations"),
-          apiFetch<{ name: string; email: string }>("/auth/me"),
+          apiFetch<{ id: string; name: string; email: string; phoneNumber?: string | null; avatarUrl?: string | null; role?: string; organizationName?: string | null; emailVerifiedAt?: string | null }>("/auth/me"),
         ]);
         if (cancelled) return;
         if (!organizations.length) { window.location.replace("/onboarding"); return; }
@@ -116,5 +116,5 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
     catch (cause) { onMessage(cause instanceof Error ? cause.message : "Project update failed"); }
   };
 
-  return { ready, organizationId, organizationName, workspaceId, currentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, teamGroups, setTeamGroups, workUpdates, visibleTasks, createTask, changeTaskStatus, changeProjectStatus };
+  return { ready, organizationId, organizationName, workspaceId, currentUser, setCurrentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, teamGroups, setTeamGroups, workUpdates, visibleTasks, createTask, changeTaskStatus, changeProjectStatus };
 }
