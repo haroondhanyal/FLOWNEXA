@@ -142,7 +142,7 @@ For a physical device, use the development computer's LAN address instead of `lo
 
 ### Web workspace
 
-- Sign in/register, session refresh, workspace setup, projects, team list/invites, tasks, board, and My Day.
+- Sign in/register, session refresh, expiring one-time email verification/password reset, workspace setup, projects, team management/invites, custom roles, and task assignment/status changes.
 - Overview, month calendar, reports with CSV export, search, notification inbox/read/archive, audit history, and review decisions.
 - Task activity: progress, next action/blocker, URL evidence references, threaded comments, manual time and a start/stop timer.
 - AI assistant: workspace questions, weekly summaries, daily plan suggestions, and task breakdown suggestions.
@@ -157,7 +157,7 @@ For a physical device, use the development computer's LAN address instead of `lo
 - Organization membership checks on tenant-scoped endpoints and event-room joins.
 - Owner/Admin/Member/Viewer roles, DTO validation, Helmet, CORS configuration, and global request throttling.
 - Review actions and task activity audit history; in-app notification records and Expo push delivery for review events.
-- PostgreSQL/Prisma migrations include notification archive state and the single-active-timer constraint.
+- PostgreSQL/Prisma migrations include notification archive state, the single-active-timer constraint, and hashed one-time account tokens.
 
 ## Development checks
 
@@ -179,13 +179,13 @@ CI runs Prisma validation/client generation plus the API test/lint/build checks,
 
 This is an active product foundation, not a claim that every enterprise production feature is finished. Current known follow-ups include:
 
-- Custom organization roles and permission checks for task creation/updates and project creation/management are implemented. Complete permission enforcement across invitations, reviews, evidence, reports, and audit access; invitation revoke/resend; password reset; and email verification/delivery remain.
+- Custom organization roles and permission checks for task creation/updates and project creation/management are implemented. Password reset and email verification flows use hashed, expiring, single-use tokens; configure `RESEND_API_KEY`, a verified `EMAIL_FROM`, and `WEB_APP_URL` in the API environment. Set `REQUIRE_EMAIL_VERIFICATION=true` to gate new registrations and sign-ins on verification. Complete permission enforcement across invitations, reviews, evidence, reports, and audit access, plus invitation revoke/resend, remain.
 - Organization member directory, team creation, and team membership management are implemented. Add invitation state/lifecycle controls and broader member administration.
 - Binary evidence uploads with private object storage; mobile camera images are still local drafts.
 - Per-event notification preferences, resilient queued/retry push delivery, and broader browser end-to-end coverage.
 - Hosted production secrets/database, deployment configuration, monitoring, backups, and operational runbooks.
 
-Keep API keys and production secrets out of client bundles and Git. Configure `AI_API_KEY` and `AI_MODEL` only in the API environment when enabling AI.
+Keep API keys and production secrets out of client bundles and Git. Configure `AI_API_KEY` and `AI_MODEL` only in the API environment when enabling AI. Email delivery uses the Resend API from the server only.
 
 ## Product identity
 

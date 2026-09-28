@@ -15,6 +15,11 @@ enum OrgRole {
   VIEWER
 }
 
+enum AuthTokenType {
+  PASSWORD_RESET
+  EMAIL_VERIFICATION
+}
+
 enum ProjectStatus {
   PLANNING
   ACTIVE
@@ -69,6 +74,7 @@ model User {
   updatedAt       DateTime                 @updatedAt
   memberships     OrganizationMember[]
   sessions        Session[]
+  authTokens      AuthToken[]
   createdProjects Project[]                @relation("ProjectCreator")
   assignedTasks   TaskAssignee[]
   createdTasks    Task[]                   @relation("TaskCreator")
@@ -96,6 +102,19 @@ model Session {
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+}
+
+model AuthToken {
+  id         String        @id @default(cuid())
+  userId     String
+  type       AuthTokenType
+  tokenHash  String        @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime      @default(now())
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, expiresAt])
 }
 
 model Organization {
