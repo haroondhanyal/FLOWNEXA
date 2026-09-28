@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
-import { ArrowRight, LockKeyhole, Mail, Sparkles } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, Sparkles } from "lucide-react";
 import { apiFetch, saveAccessToken } from "@/lib/api";
 
 type Session = { accessToken?: string; verificationRequired?: boolean; user: { name: string; email: string } };
@@ -14,12 +14,13 @@ export default function Login() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(""); setMessage(""); setBusy(true);
     const form = new FormData(event.currentTarget);
     try {
       if (mode === "forgot") { const result = await apiFetch<{ message: string }>("/auth/forgot-password", { method: "POST", auth: false, body: JSON.stringify({ email: form.get("email") }) }); setMessage(result.message); return; }
-      const session = await apiFetch<Session>(`/auth/${mode === "login" ? "login" : "register"}`, { method: "POST", auth: false, body: JSON.stringify({ email: form.get("email"), password: form.get("password"), ...(mode === "register" ? { name: form.get("name") } : {}) }) });
+      const session = await apiFetch<Session>(`/auth/${mode === "login" ? "login" : "register"}`, { method: "POST", auth: false, body: JSON.stringify({ email: form.get("email"), password: form.get("password"), ...(mode === "login" ? { rememberMe: form.get("rememberMe") === "on" } : {}), ...(mode === "register" ? { name: form.get("name") } : {}) }) });
       if (session.verificationRequired) { setMessage("Account created. Check your email for the verification link before signing in."); setMode("login"); return; }
       if (!session.accessToken) throw new Error("The API did not return a sign-in session");
       saveAccessToken(session.accessToken);
@@ -38,8 +39,9 @@ export default function Login() {
   }
   return <main className="login-shell"><section className="login-brand-panel"><Link className="brand login-brand" href="/"><span className="brand-mark"><span/><span/><span/><span/></span><span>flow<span className="brand-light">nexa</span></span></Link><div className="login-pitch"><span className="login-pitch-icon"><Sparkles size={19}/></span><h1>Make meaningful work move forward.</h1><p>Plan together, keep the details close, and make progress visible.</p><div className="login-pitch-foot"><span className="live-dot"/> A calmer way to work as a team</div></div><span className="login-copyright">© 2026 FlowNexa · Plan. Execute. Prove.</span></section><section className="login-form-side"><div className="login-form-wrap"><div className="login-mobile-brand"><Link className="brand" href="/"><span className="brand-mark"><span/><span/><span/><span/></span><span>flow<span className="brand-light">nexa</span></span></Link></div><div className="eyebrow">YOUR WORKSPACE, IN FLOW</div><h2>{mode === "login" ? "Welcome back" : mode === "register" ? "Create your account" : "Reset your password"}</h2><p className="login-sub">{mode === "login" ? "Sign in to pick up where your team left off." : mode === "register" ? "Start a workspace for your team. It only takes a minute." : "Enter your work email and we will send reset instructions."}</p><form className="login-form" onSubmit={submit}>
       {mode === "register" && <label className="field-label">Full name<input name="name" autoComplete="name" required minLength={2} placeholder="Your name"/></label>}
-      <label className="field-label">Work email<span className="input-icon"><Mail size={15}/><input name="email" type="email" autoComplete="email" required placeholder="you@company.com"/></span></label>
-      {mode !== "forgot" && <label className="field-label">Password<span className="input-icon"><LockKeyhole size={15}/><input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={12} maxLength={128} placeholder="At least 12 characters"/></span></label>}
+      <label className="field-label">Work email<span className="input-icon"><Mail size={15}/><input name="email" type="email" autoComplete="username" required placeholder="you@company.com"/></span></label>
+      {mode !== "forgot" && <label className="field-label">Password<span className="input-icon"><LockKeyhole size={15}/><input name="password" type={showPassword ? "text" : "password"} autoComplete={mode === "login" ? "current-password" : "new-password"} autoCapitalize="off" spellCheck={false} required minLength={12} maxLength={128} placeholder="At least 12 characters"/><button className="password-visibility" type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={()=>setShowPassword(value=>!value)}>{showPassword ? <EyeOff size={15}/> : <Eye size={15}/>}</button></span></label>}
+      {mode === "login" && <label className="remember-option"><input name="rememberMe" type="checkbox"/> <span>Remember me</span></label>}
       {error && <p className="auth-error" role="alert">{error}</p>}{message && <p role="status" className="toolbar-note">{message}</p>}<button className="primary-button login-submit" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign in" : mode === "register" ? "Create account" : "Send reset link"}<ArrowRight size={16}/></button>
     </form>{mode === "login" && <p className="login-switch"><button onClick={()=>{setMode("forgot");setError("");setMessage("")}}>Forgot password?</button></p>}<p className="login-switch">{mode === "register" ? "Already have an account?" : mode === "forgot" ? "Remembered your password?" : "New to FlowNexa?"} <button onClick={()=>{setMode(mode === "register" ? "login" : "register");setError("");setMessage("")}}>{mode === "register" || mode === "forgot" ? "Sign in" : "Create an account"}</button></p><p className="auth-note">Your password is only sent to the FlowNexa API over your configured connection.</p></div></section></main>;
 }

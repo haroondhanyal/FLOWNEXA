@@ -15,26 +15,26 @@ export class AuthService {
     const user = await this.prisma.user.create({ data: { email, name: input.name.trim(), passwordHash } });
     await this.sendVerification(user.id, user.email);
     if (process.env.REQUIRE_EMAIL_VERIFICATION === "true") return { user: { id: user.id, email: user.email, name: user.name }, verificationRequired: true as const };
-    return { user: { id: user.id, email: user.email, name: user.name }, ...(await this.tokens(user.id, user.email)) };
+    return { user: { id: user.id, email: user.email, name: user.name }, ...(await this.tokens(user.id, user.email, false)) };
   }
   async login(input: LoginDto) {
     const email = input.email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) throw new UnauthorizedException("Email or password is incorrect");
     if (process.env.REQUIRE_EMAIL_VERIFICATION === "true" && !user.emailVerifiedAt) throw new UnauthorizedException("Verify your email before signing in");
-    return { user: { id: user.id, email: user.email, name: user.name }, ...(await this.tokens(user.id, user.email)) };
+    return { user: { id: user.id, email: user.email, name: user.name }, ...(await this.tokens(user.id, user.email, input.rememberMe === true)) };
   }
-  private async tokens(sub: string, email: string) {
+  private async tokens(sub: string, email: string, rememberMe: boolean) {
     const accessToken = await this.jwt.signAsync({ sub, email });
     const sessionId = randomUUID();
-    const refreshToken = await this.jwt.signAsync({ sub, sid: sessionId, type: "refresh" }, { secret: process.env.JWT_REFRESH_SECRET!, expiresIn: "30d", issuer: "flownexa-api", audience: "flownexa-refresh" });
+    const refreshToken = await this.jwt.signAsync({ sub, sid: sessionId, type: "refresh", rememberMe }, { secret: process.env.JWT_REFRESH_SECRET!, expiresIn: "30d", issuer: "flownexa-api", audience: "flownexa-refresh" });
     const refreshTokenHash = await bcrypt.hash(refreshToken, 12);
     await this.prisma.session.create({ data: { id: sessionId, userId: sub, refreshTokenHash, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
-    return { accessToken, refreshToken, sessionId };
+    return { accessToken, refreshToken, sessionId, rememberMe };
   }
   async refresh(token?: string) {
     if (!token) throw new UnauthorizedException();
-    let payload: { sub: string; sid: string; type: string };
+    let payload: { sub: string; sid: string; type: string; rememberMe?: boolean };
     try { payload = await this.jwt.verifyAsync(token, { secret: process.env.JWT_REFRESH_SECRET!, issuer: "flownexa-api", audience: "flownexa-refresh" }); }
     catch { throw new UnauthorizedException(); }
     if (payload.type !== "refresh" || !payload.sid || !payload.sub) throw new UnauthorizedException();
@@ -42,7 +42,7 @@ export class AuthService {
     if (!session || !(await bcrypt.compare(token, session.refreshTokenHash))) throw new UnauthorizedException();
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, select: { id: true, email: true, name: true } });
     if (!user) throw new UnauthorizedException();
-    const tokens = await this.tokens(user.id, user.email);
+    const tokens = await this.tokens(user.id, user.email, payload.rememberMe === true);
     const rotated = await this.prisma.session.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: new Date() } });
     if (rotated.count !== 1) { await this.prisma.session.updateMany({ where: { id: tokens.sessionId, revokedAt: null }, data: { revokedAt: new Date() } }); throw new UnauthorizedException(); }
     return { user, ...tokens };
