@@ -25,7 +25,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 3000); };
-  const { ready, organizationId, organizationName, workspaceId, currentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, workUpdates, visibleTasks, createTask, changeTaskStatus } = useWorkspaceData(query, notify, () => setShowCreate(false));
+  const { ready, organizationId, organizationName, workspaceId, currentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, teamGroups, setTeamGroups, workUpdates, visibleTasks, createTask, changeTaskStatus, changeProjectStatus } = useWorkspaceData(query, notify, () => setShowCreate(false));
   const signOut = async () => { try { await apiFetch("/auth/logout", { method: "POST", auth: false }); } catch { /* Clear this browser session even if the API is offline. */ } sessionStorage.removeItem("flownexa-access-token"); window.location.assign("/login"); };
 
   if (!ready) return <main className="auth-loading"><span className="brand-mark"><span/><span/><span/><span/></span><span>Loading your workspace…</span></main>;
@@ -55,15 +55,15 @@ export default function Home() {
           {/* BOARD SCREEN: group tasks by status so blockers and active work are easy to see. */}
           {active === "Board" && <BoardScreen tasks={taskRecords} onChangeStatus={(task, state) => void changeTaskStatus(task, state)} />}
           {/* PROJECTS SCREEN: browse active projects and check delivery progress at a glance. */}
-          {active === "Projects" && <ProjectListScreen projects={projectRecords} organizationName={organizationName} query={query} onQueryChange={setQuery} onCreate={() => setActive("New project")} />}
+          {active === "Projects" && <ProjectListScreen projects={projectRecords} organizationName={organizationName} query={query} onQueryChange={setQuery} onCreate={() => setActive("New project")} onStatusChange={(project, status) => void changeProjectStatus(project, status)} />}
           {/* TEAMS SCREEN: see who belongs to each team before managing invitations. */}
-          {active === "Teams" && <TeamMembersScreen members={teamRecords} onInvite={() => setActive("Invite member")} onRoles={() => setActive("Roles & access")} />}
+          {active === "Teams" && <TeamMembersScreen organizationId={organizationId} workspaceId={workspaceId} members={teamRecords} teams={teamGroups} onTeamsChange={setTeamGroups} onInvite={() => setActive("Invite member")} onRoles={() => setActive("Roles & access")} onMessage={notify} />}
           {/* INVITE SCREEN: create a time-limited link so the right person can join this organization. */}
           {active === "Invite member" && <InviteMemberScreen organizationId={organizationId} onCreated={(inviteToken) => { setActive("Teams"); setToast(`Share: /login?organizationId=${organizationId}#${inviteToken}`); window.setTimeout(() => setToast(""), 20000); }} onMessage={notify} />}
           {/* NEW PROJECT SCREEN: collect the project basics before saving a shared delivery space. */}
           {active === "New project" && <ProjectCreateScreen organizationId={organizationId} workspaceId={workspaceId} userName={currentUser.name} onCreated={(project) => { setProjectRecords((current) => [project, ...current]); setActive("Projects"); notify("Project created"); }} onMessage={notify} />}
           {/* ROLES SCREEN: explain the access levels teammates can have in this workspace. */}
-          {active === "Roles & access" && <RolesScreen />}
+          {active === "Roles & access" && <RolesScreen organizationId={organizationId} members={teamRecords} onMessage={notify} />}
           {/* MY DAY SCREEN: focus the signed-in teammate on work due today. */}
           {active === "My day" && <MyDayScreen tasks={taskRecords} />}
           {/* CALENDAR SCREEN: show upcoming due dates across this organization's tasks. */}

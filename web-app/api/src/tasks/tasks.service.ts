@@ -1,13 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { EventsGateway } from "../events/events.gateway";
+import { requireOrganizationPermission } from "../organizations/access-control";
 @Injectable()
 export class TasksService {
   constructor(private readonly prisma: PrismaService, private readonly events: EventsGateway) {}
   private async membership(userId: string, organizationId: string) { const member = await this.prisma.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } } }); if (!member) throw new NotFoundException("Organization not found"); return member; }
   async list(userId: string, organizationId: string, projectId?: string, mine = false) { await this.membership(userId, organizationId); return this.prisma.task.findMany({ where: { organizationId, deletedAt: null, ...(projectId ? { projectId } : {}), ...(mine ? { assignees: { some: { userId } } } : {}) }, include: { project: { select: { id: true, name: true } }, assignees: { include: { user: { select: { id: true, name: true, email: true } } } }, _count: { select: { comments: true, workUpdates: true, subtasks: true } } }, orderBy: [{ dueAt: "asc" }, { updatedAt: "desc" }], take: 100 }); }
   async create(userId: string, organizationId: string, input: { projectId: string; title: string; description?: string; dueAt?: string; priority?: "LOW"|"MEDIUM"|"HIGH"|"URGENT"|"CRITICAL"; parentId?: string; assigneeIds?: string[] }) {
-    const member = await this.membership(userId, organizationId); if (member.role === "VIEWER") throw new ForbiddenException();
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "task.create");
     const project = await this.prisma.project.findFirst({ where: { id: input.projectId, organizationId }, select: { id: true } }); if (!project) throw new NotFoundException("Project not found");
     if (input.parentId && !await this.prisma.task.findFirst({ where: { id: input.parentId, organizationId, deletedAt: null }, select: { id: true } })) throw new NotFoundException("Parent task not found");
     if (input.assigneeIds?.length) { const count = await this.prisma.organizationMember.count({ where: { organizationId, userId: { in: input.assigneeIds } } }); if (count !== new Set(input.assigneeIds).size) throw new NotFoundException("One or more assignees are not workspace members"); }
@@ -23,7 +24,7 @@ export class TasksService {
     return created;
   }
   async update(userId: string, organizationId: string, taskId: string, input: { title?: string; description?: string; status?: "BACKLOG"|"TODO"|"IN_PROGRESS"|"BLOCKED"|"READY_FOR_REVIEW"|"CHANGES_REQUESTED"|"COMPLETED"|"REOPENED"|"CANCELLED"; priority?: "LOW"|"MEDIUM"|"HIGH"|"URGENT"|"CRITICAL"; progress?: number }) {
-    const member = await this.membership(userId, organizationId); if (member.role === "VIEWER") throw new ForbiddenException();
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "task.update");
     const task = await this.prisma.task.findFirst({ where: { id: taskId, organizationId, deletedAt: null }, select: { id: true } }); if (!task) throw new NotFoundException("Task not found");
     const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.task.update({ where: { id: task.id }, data: input });

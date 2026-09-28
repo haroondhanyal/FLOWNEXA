@@ -31,7 +31,7 @@ Each screen component starts with a short code comment stating what the screen d
 
 **Own:** `web-app/src/app/onboarding/`, `web-app/src/components/screens/TeamMembersScreen.tsx`, `InviteMemberScreen.tsx`, `RolesScreen.tsx`, and `web-app/api/src/organizations/` (including teams and invitations).
 
-**Build:** make workspace setup resumable, create and manage teams, invite/revoke/resend members, show invitation state, and enforce the existing Owner/Admin/Member/Viewer roles in API guards. Keep the member list, invite form, and access screen as separate components; avoid putting them back in `src/app/page.tsx`.
+**Current:** organization member directory, team creation/membership changes, custom role definitions, and task/project permission checks are implemented. Remaining work: invitation list/revoke/resend/state, email delivery and verification/reset flows, and applying fine-grained permission checks to invitations, reviews, evidence, reports, and audit access. Keep member, invite, and access screens as separate components.
 
 **Done when:** a new user can set up or resume an organization; invite links expire/revoke correctly; users cannot read or change another organization's members/settings; each role has a written permissions table and API enforcement.
 

@@ -5,7 +5,8 @@ import { apiFetch } from "@/lib/api";
 
 export type TaskRecord = { id: string; title: string; project: string; projectId?: string; initials: string; person: string; color: string; date: string; state: string; priority: string };
 export type ProjectRecord = { id?: string; name: string; status: string; due: string; lead: string; progress: number };
-export type TeamRecord = { name: string; email: string; role: string; team: string };
+export type TeamRecord = { id: string; name: string; email: string; role: string; customRoleId?: string | null; teams: string[] };
+export type TeamGroupRecord = { id: string; name: string; members: { user: { id: string; name: string; email: string } }[] };
 export type WorkUpdateRecord = { task: string; taskId: string; progress: number; note: string; when: string; evidence?: string };
 type Organization = { id: string; name: string; workspaces: { id: string; name: string }[] };
 type ApiTask = { id: string; title: string; status: string; priority: string; dueAt: string | null; project: { id: string; name: string } | null; assignees: { user: { name: string } }[] };
@@ -23,6 +24,7 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
   const [projectRecords, setProjectRecords] = useState<ProjectRecord[]>([]);
   const [teamRecords, setTeamRecords] = useState<TeamRecord[]>([]);
+  const [teamGroups, setTeamGroups] = useState<TeamGroupRecord[]>([]);
   const [workUpdates, setWorkUpdates] = useState<WorkUpdateRecord[]>([]);
 
   useEffect(() => {
@@ -44,10 +46,11 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
         setWorkspaceId(organization.workspaces[0]?.id ?? "");
         setCurrentUser(user);
 
-        const [projects, tasks, teams, updates] = await Promise.all([
+        const [projects, tasks, teams, members, updates] = await Promise.all([
           apiFetch<{ id: string; name: string; status: string; targetDate: string | null; creator: { name: string }; _count: { tasks: number } }[]>(`/organizations/${organization.id}/projects`),
           apiFetch<ApiTask[]>(`/organizations/${organization.id}/tasks`),
-          apiFetch<{ name: string; members: { user: { name: string; email: string } }[] }[]>(`/organizations/${organization.id}/teams`),
+          apiFetch<TeamGroupRecord[]>(`/organizations/${organization.id}/teams`),
+          apiFetch<TeamRecord[]>(`/organizations/${organization.id}/members`),
           apiFetch<{ task: { id: string; title: string }; progress: number; completed: string; submittedAt: string; evidence: { storageKey: string }[] }[]>(`/organizations/${organization.id}/work-updates`),
         ]);
         if (cancelled) return;
@@ -60,7 +63,8 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
           const person = task.assignees[0]?.user.name ?? "Unassigned";
           return { id: task.id, title: task.title, project: task.project?.name ?? "No project", projectId: task.project?.id, initials: person === "Unassigned" ? "--" : person.split(" ").map((part) => part[0]).join("").slice(0, 2), person, color: "lavender", date: task.dueAt ? new Date(task.dueAt).toLocaleDateString() : "No date", state: displayTaskStatus[task.status] ?? task.status, priority: task.priority[0] + task.priority.slice(1).toLowerCase() };
         }));
-        setTeamRecords(teams.flatMap((team) => team.members.map((item) => ({ name: item.user.name, email: item.user.email, role: "Member", team: team.name }))));
+        setTeamGroups(teams);
+        setTeamRecords(members);
         setWorkUpdates(updates.map((update) => ({ task: update.task.title, taskId: update.task.id, progress: update.progress, note: update.completed, when: new Date(update.submittedAt).toLocaleString(), evidence: update.evidence[0]?.storageKey })));
         setReady(true);
       } catch {
@@ -104,6 +108,11 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
       setTaskRecords((records) => records.map((item) => item.id === task.id ? { ...item, state: status } : item));
     } catch (cause) { onMessage(cause instanceof Error ? cause.message : "Task update failed"); }
   };
+  const changeProjectStatus = async (project: ProjectRecord, status: string) => {
+    if (!project.id) return;
+    try { await apiFetch(`/organizations/${organizationId}/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ status }) }); const display = status.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()); setProjectRecords((records) => records.map((item) => item.id === project.id ? { ...item, status: display } : item)); onMessage("Project status updated"); }
+    catch (cause) { onMessage(cause instanceof Error ? cause.message : "Project update failed"); }
+  };
 
-  return { ready, organizationId, organizationName, workspaceId, currentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, workUpdates, visibleTasks, createTask, changeTaskStatus };
+  return { ready, organizationId, organizationName, workspaceId, currentUser, taskRecords, projectRecords, setProjectRecords, teamRecords, teamGroups, setTeamGroups, workUpdates, visibleTasks, createTask, changeTaskStatus, changeProjectStatus };
 }

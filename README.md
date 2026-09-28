@@ -179,7 +179,8 @@ CI runs Prisma validation/client generation plus the API test/lint/build checks,
 
 This is an active product foundation, not a claim that every enterprise production feature is finished. Current known follow-ups include:
 
-- Fine-grained enforcement of custom permissions, complete team assignment/management, password reset, and email verification/delivery.
+- Custom organization roles and permission checks for task creation/updates and project creation/management are implemented. Complete permission enforcement across invitations, reviews, evidence, reports, and audit access; invitation revoke/resend; password reset; and email verification/delivery remain.
+- Organization member directory, team creation, and team membership management are implemented. Add invitation state/lifecycle controls and broader member administration.
 - Binary evidence uploads with private object storage; mobile camera images are still local drafts.
 - Per-event notification preferences, resilient queued/retry push delivery, and broader browser end-to-end coverage.
 - Hosted production secrets/database, deployment configuration, monitoring, backups, and operational runbooks.
