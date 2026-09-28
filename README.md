@@ -2,98 +2,96 @@
   <img src="web-app/public/flownexa-logo.svg" alt="FlowNexa — Plan. Execute. Prove." width="300" />
 </p>
 
-<h1 align="center">Plan. Execute. Prove.</h1>
+<h1 align="center">FlowNexa Mobile</h1>
 
-<p align="center">A shared work-management workspace for teams to plan projects, coordinate tasks, report progress, review outcomes, and keep an accountable record of work.</p>
+<p align="center"><strong>Plan. Execute. Prove.</strong><br/>A mobile companion for teams to check assigned work, report progress, capture evidence drafts, and stay current while away from their desk.</p>
 
 <p align="center">
-  <a href="https://github.com/haroondhanyal/FLOWNEXA/actions/workflows/ci.yml"><img src="https://github.com/haroondhanyal/FLOWNEXA/actions/workflows/ci.yml/badge.svg?branch=web-app" alt="FlowNexa CI" /></a>
-  <img src="https://img.shields.io/badge/default%20branch-web--app-7668d0" alt="Default branch: web-app" />
-  <img src="https://img.shields.io/badge/mobile-Expo-514899" alt="Mobile: Expo" />
+  <a href="https://github.com/haroondhanyal/FLOWNEXA/actions/workflows/ci.yml"><img src="https://github.com/haroondhanyal/FLOWNEXA/actions/workflows/ci.yml/badge.svg?branch=mobile-app" alt="FlowNexa mobile branch CI" /></a>
+  <img src="https://img.shields.io/badge/mobile-Expo%20Router-514899" alt="Expo Router" />
+  <img src="https://img.shields.io/badge/API-shared%20NestJS-7668d0" alt="Shared NestJS API" />
 </p>
 
-## Product overview
+## Mobile product overview
 
-FlowNexa brings a team's planned work and proof of progress into one workspace. People organize work by organization, project, and task; teammates can add progress updates, evidence links, comments, and time records; managers can review submissions and inspect the audit history. The web dashboard gives teams a broad view, while the Expo mobile app focuses on assigned tasks, updates, and notifications.
+FlowNexa Mobile is the iOS/Android companion to the FlowNexa team workspace. It focuses on quick, in-context actions: see today's workload, browse assigned tasks, submit progress, comment, record time, capture a local evidence photo draft, sync offline work updates, and read workspace notifications.
 
-The product is designed around a simple work loop:
+The mobile client uses the same organization, task, work update, notification, and review records as the web client. It does not carry its own database or create a second copy of workspace data. The API remains the source of truth; local storage is used for the access token and drafts that have not synced yet.
 
-1. **Plan** — set up an organization, projects, priorities, owners, and due dates.
-2. **Execute** — work from task lists, boards, and a daily view; add comments and time.
-3. **Prove** — post progress, link supporting evidence, request review, and preserve decisions in the audit history.
+The web dashboard and shared backend are in the [`web-app` branch](https://github.com/haroondhanyal/FLOWNEXA/tree/web-app). This branch is the mobile development track. The repository is a monorepo, so `web-app/api/` and `web-app/database/` are included here because the mobile app depends on that shared backend.
 
-The repository is a monorepo: the web client, shared API/database, and mobile client live in separate folders. Both branch tracks contain the shared API required by their client. `web-app` is the intended default branch; `mobile-app` is the dedicated mobile development branch.
-
-## Architecture
+## Mobile architecture
 
 ```mermaid
 flowchart LR
-  Browser[Next.js web app] -->|REST / JSON + HTTP-only refresh cookie| API[NestJS API]
-  Phone[Expo iOS / Android app] -->|REST / JSON + secure token storage| API
-  Browser <-->|Authenticated Socket.IO| Events[Organization event gateway]
-  Phone <-->|Authenticated Socket.IO| Events
+  Screens[Expo Router screens] --> Client[Mobile API client]
+  Client -->|HTTPS REST / JSON + access token| API[NestJS API]
+  Screens -->|Encrypted access token| SecureStore[Expo SecureStore]
+  Screens -->|Offline update drafts and local photos| Local[AsyncStorage + app files]
+  Screens <-->|Authenticated Socket.IO| Events[Organization event gateway]
   Events --> API
   API --> DB[(PostgreSQL via Prisma)]
-  API -. optional .-> Redis[(Redis)]
   API --> Push[Expo push service]
-  API -. optional server-side requests .-> AI[Configured AI provider]
 ```
 
-### Main layers
+### Runtime flow
 
-| Layer | Location | Responsibility |
+1. The login screen sends credentials to the shared API and stores the returned short-lived access token in Expo SecureStore.
+2. Screens call the shared NestJS API through `mobile-app/lib/api.ts`. The API validates the token, organization membership, role, and DTO before returning or changing tenant data.
+3. The home, task, inbox, and create screens load the signed-in user's first organization. The API is authoritative; opening a tab or receiving a workspace event refreshes saved data.
+4. If a work update cannot reach the API because the network is unavailable, the teammate can save a local draft and explicitly sync it after reconnecting. Server validation failures stay visible instead of being silently queued.
+5. Camera captures remain in the app's document directory and are shown as local evidence drafts. They are not uploaded because a private binary evidence endpoint/storage service is not configured.
+6. Push registration is opt-in. The app registers an Expo device token against the signed-in user and removes it at logout; push requires an EAS project and a development build.
+
+## Mobile screen map
+
+| Screen | What it is for | Source |
 | --- | --- | --- |
-| Web client | `web-app/src/` | Next.js App Router, sign-in/onboarding, dashboard shell, independent workspace screens, shared API client, and realtime client. |
-| Mobile client | `mobile-app/` | Expo Router sign-in and tabs for home, assigned tasks, create/update, inbox, and profile; secure token storage and local update drafts. |
-| REST API | `web-app/api/src/` | NestJS controllers/DTOs/services for auth, organizations, projects, tasks, work updates, reviews, reports, AI, and notifications. |
-| Data | `web-app/database/prisma/` | PostgreSQL schema, migrations, indexes, and Prisma client generation. Organization IDs scope tenant data. |
-| Realtime | `web-app/api/src/events/`, `web-app/src/components/RealtimeBridge.tsx`, `mobile-app/lib/useWorkspaceEvents.ts` | Authenticated Socket.IO events. The API verifies organization membership before a client joins its event room. |
-| Local services | `web-app/docker-compose.yml` | PostgreSQL, Redis, API, and web containers for local development. |
-| Quality checks | `.github/workflows/ci.yml` | Web/API checks and mobile checks on the mobile branch. |
+| Sign in | Authenticate, restore an existing local session, and enter the workspace. | `mobile-app/app/index.tsx` |
+| Home | Show open tasks, due-today count, completed work, and blocked/review items. | `mobile-app/app/(tabs)/index.tsx` |
+| Tasks | Browse tasks assigned to the current user and their status/project/due date. | `mobile-app/app/(tabs)/tasks.tsx` |
+| Create | Submit task updates, save/sync offline drafts, capture local photos, comment, record manual time, or create a task. | `mobile-app/app/(tabs)/create.tsx` |
+| Inbox | Read stored organization notifications and mark them as read. | `mobile-app/app/(tabs)/inbox.tsx` |
+| Profile | Opt into Expo push notifications, remove the device token, and sign out. | `mobile-app/app/(tabs)/profile.tsx` |
 
-### Request and data flow
-
-1. A person signs in through the selected client. The API issues short-lived access credentials and an HTTP-only refresh cookie for the web flow; the mobile client keeps its access token in SecureStore.
-2. The client loads organizations and sends an organization ID with workspace requests. API services verify membership and apply role checks to writes.
-3. NestJS validates request DTOs, runs domain logic, and reads/writes PostgreSQL through Prisma. Important task activity, review actions, and decisions create audit records.
-4. Successful changes publish organization-scoped Socket.IO events. Connected members refresh the relevant screen; stored inbox notifications remain available after reconnect.
-5. Optional AI requests are made by the API using bounded workspace context. The AI key remains on the server; plans and task breakdowns are suggestions and do not create records.
-
-## Repository layout
+## Repository layout on this branch
 
 ```text
 .
-├── .github/workflows/ci.yml
-├── docs/WEB-TEAM-TASKS.md
-├── mobile-app/                  # Expo client
-└── web-app/
-    ├── src/                     # Next.js app and workspace screens
-    ├── api/src/                 # NestJS REST, auth, events, AI, services
-    ├── database/prisma/         # PostgreSQL schema and migrations
-    ├── Dockerfile
-    ├── api/Dockerfile
-    └── docker-compose.yml
+├── .github/workflows/ci.yml    # Web/API CI plus mobile checks on this branch
+├── README.md                   # Mobile branch and full product overview
+├── mobile-app/
+│   ├── app/                    # Expo Router login and tab screens
+│   ├── lib/api.ts              # API client, session refresh, SecureStore
+│   └── lib/useWorkspaceEvents.ts
+├── web-app/api/                # Shared NestJS backend used by both clients
+└── web-app/database/prisma/    # Shared PostgreSQL schema and migrations
 ```
 
-## Branch model
-
-| Branch | Purpose | Expected GitHub setting |
-| --- | --- | --- |
-| `web-app` | Default integration branch; primary workstream for the web client and shared API. | Default branch |
-| `mobile-app` | Mobile workstream for the Expo client and mobile-specific improvements. | Regular branch, based on the shared project |
-
-Both branches use the same repository and monorepo folder layout. Keep shared API/schema changes coordinated across the two branches, and merge them through `web-app` when ready. Feature branches for the six web workstreams should start from the latest `web-app`; see [the team task board](docs/WEB-TEAM-TASKS.md).
-
-## Run locally
+## Run the mobile app
 
 ### Requirements
 
-- Node.js 22.13 or newer
-- npm
-- Docker Desktop / Docker Engine for the local PostgreSQL and Redis services
-- Expo Go for basic device development; push notifications require an EAS project and a development build
+- Node.js 22.13 or newer and npm
+- Expo Go for ordinary development; use an EAS development build for push notifications
+- A running FlowNexa API (see [the API setup below](#start-the-shared-api))
+- A phone/simulator that can reach the API host
 
-### Web and API
+```bash
+cd mobile-app
+npm ci
+cp .env.example .env
+```
+
+Set `EXPO_PUBLIC_API_URL` in `.env` to the API URL reachable from the device. For a physical phone, use your development computer's LAN IP, for example `http://192.168.1.25:4000/api/v1`; `localhost` points to the phone itself. Then run:
+
+```bash
+npm start
+```
+
+Choose a platform in the Expo CLI, or run `npm run ios` / `npm run android` when the corresponding simulator/toolchain is installed.
+
+### Start the shared API
 
 ```bash
 cd web-app
@@ -101,7 +99,7 @@ cp .env.example .env
 docker compose up postgres redis
 ```
 
-In a second terminal, run the API:
+In another terminal:
 
 ```bash
 cd web-app/api
@@ -112,80 +110,45 @@ npm run prisma:seed
 npm run dev
 ```
 
-In another terminal, run the web client:
+The API base URL is `http://localhost:4000/api/v1` from the development computer. Configure AI provider keys only in the API `.env`; do not put secrets in Expo's `EXPO_PUBLIC_` variables.
 
-```bash
-cd web-app
-npm ci
-npm run dev
-```
+## Configuration
 
-Open <http://localhost:3000>. The API is at <http://localhost:4000/api/v1>; Swagger is at <http://localhost:4000/api/v1/docs>. `NEXT_PUBLIC_API_URL` defaults to the local API URL.
+`mobile-app/.env.example` contains:
 
-For the complete local container stack, copy `web-app/.env.example` to `web-app/.env`, replace both JWT secrets with separate random values of at least 32 characters, then run `docker compose up --build` from `web-app/`.
+| Variable | Purpose |
+| --- | --- |
+| `EXPO_PUBLIC_API_URL` | REST API base URL. Must be reachable by the device. |
+| `EXPO_PUBLIC_EAS_PROJECT_ID` | EAS project used to request an Expo push token. Optional until push is configured. |
 
-### Mobile
+Do not store private keys, database credentials, JWT secrets, or AI provider keys in this app. Values prefixed by `EXPO_PUBLIC_` are bundled into the client and are public.
 
-Start the API using the steps above. Then:
+## Mobile verification
 
 ```bash
 cd mobile-app
-cp .env.example .env
-# Set EXPO_PUBLIC_API_URL to an API host reachable from the phone.
 npm ci
-npm start
-```
-
-For a physical device, use the development computer's LAN address instead of `localhost`. Camera captures are currently held on-device; private server-side binary evidence storage is not configured yet.
-
-## Feature overview
-
-### Web workspace
-
-- Sign in/register, session refresh, workspace setup, projects, team list/invites, tasks, board, and My Day.
-- Overview, month calendar, reports with CSV export, search, notification inbox/read/archive, audit history, and review decisions.
-- Task activity: progress, next action/blocker, URL evidence references, threaded comments, manual time and a start/stop timer.
-- AI assistant: workspace questions, weekly summaries, daily plan suggestions, and task breakdown suggestions.
-
-### Mobile workspace
-
-- Sign-in, organization overview, assigned task browsing, work updates, manual time, inbox, and profile.
-- SecureStore access token, authenticated realtime refresh, local work-update drafts, camera capture drafts, and Expo push registration.
-
-### API and data controls
-
-- Organization membership checks on tenant-scoped endpoints and event-room joins.
-- Owner/Admin/Member/Viewer roles, DTO validation, Helmet, CORS configuration, and global request throttling.
-- Review actions and task activity audit history; in-app notification records and Expo push delivery for review events.
-- PostgreSQL/Prisma migrations include notification archive state and the single-active-timer constraint.
-
-## Development checks
-
-```bash
-# Web
-cd web-app && npm run typecheck && npm run lint && npm run build
-
-# API (run from web-app/api)
-npm run prisma:generate
+npx expo install --check
 npm run typecheck
-npm test -- --coverage
-npm run lint
-npm run build
 ```
 
-CI runs Prisma validation/client generation plus the API test/lint/build checks, the web typecheck/lint/build checks, and mobile typechecking for changes to the `mobile-app` branch.
+The repo workflow also checks web/API type, lint, test, schema, and build jobs on pushes, and runs the mobile SDK/package and TypeScript checks on the `mobile-app` branch.
 
-## Current scope and follow-ups
+## Current mobile scope
 
-This is an active product foundation, not a claim that every enterprise production feature is finished. Current known follow-ups include:
+- Camera photos are local-only drafts until the server gets authenticated private upload and storage.
+- Offline queue support is for work-update drafts; comments, task creation, time entries, and inbox actions need a live API connection.
+- Push delivery currently covers review events and needs EAS/device credentials plus platform permission.
+- Sign-in currently loads the first organization returned by the API; an organization switcher and mobile workspace setup are follow-ups.
+- The mobile app uses React Native components and does not reuse the web DOM or CSS. Both clients share API contracts and the data model instead.
 
-- Fine-grained enforcement of custom permissions, complete team assignment/management, password reset, and email verification/delivery.
-- Binary evidence uploads with private object storage; mobile camera images are still local drafts.
-- Per-event notification preferences, resilient queued/retry push delivery, and broader browser end-to-end coverage.
-- Hosted production secrets/database, deployment configuration, monitoring, backups, and operational runbooks.
+## Contributing on `mobile-app`
 
-Keep API keys and production secrets out of client bundles and Git. Configure `AI_API_KEY` and `AI_MODEL` only in the API environment when enabling AI.
+1. Pull the latest `mobile-app` branch before starting a mobile change.
+2. Keep screens in `mobile-app/app/` and reusable transport/session logic in `mobile-app/lib/`.
+3. Route workspace reads/writes through `lib/api.ts`; do not create a parallel client database.
+4. Keep server authorization and validation in the shared API. A hidden button is not an access-control rule.
+5. Run Expo package validation and TypeScript checks before pushing.
+6. Coordinate shared API/Prisma changes with the web/API team and carry them through the `web-app` integration branch.
 
-## Product identity
-
-**FlowNexa — Plan. Execute. Prove.** The shared brand mark is based on a four-part flow symbol and the violet workspace palette. Web uses the SVG asset at `web-app/public/flownexa-logo.svg`; the mobile sign-in screen renders the same mark and wordmark in native views.
+See [web team tasks](docs/WEB-TEAM-TASKS.md) for the broader product ownership plan. See the [web branch](https://github.com/haroondhanyal/FLOWNEXA/tree/web-app) for desktop workspace screens and API development.
