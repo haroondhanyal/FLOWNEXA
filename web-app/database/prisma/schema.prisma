@@ -160,6 +160,7 @@ model OrganizationInvitation {
   tokenHash      String       @unique
   expiresAt      DateTime
   acceptedAt     DateTime?
+  revokedAt      DateTime?
   createdAt      DateTime     @default(now())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   inviter        User         @relation("InvitationSender", fields: [inviterId], references: [id])

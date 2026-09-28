@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { EventsGateway } from "../events/events.gateway";
+import { requireOrganizationPermission } from "../organizations/access-control";
 
 @Injectable()
 export class WorkspaceToolsService {
@@ -12,8 +13,7 @@ export class WorkspaceToolsService {
     return member;
   }
   async requestReview(userId: string, organizationId: string, taskId: string) {
-    const member = await this.member(userId, organizationId);
-    if (member.role === "VIEWER") throw new ForbiddenException();
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "task.update");
     const task = await this.prisma.task.findFirst({ where: { id: taskId, organizationId, deletedAt: null }, include: { assignees: true } });
     if (!task) throw new NotFoundException("Task not found");
     if (task.status === "COMPLETED" || task.status === "CANCELLED") throw new BadRequestException("This task cannot be submitted for review");
@@ -30,12 +30,11 @@ export class WorkspaceToolsService {
     return review;
   }
   async reviews(userId: string, organizationId: string) {
-    await this.member(userId, organizationId);
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "task.review");
     return this.prisma.review.findMany({ where: { task: { organizationId } }, include: { task: { select: { id: true, title: true, status: true, project: { select: { name: true } } } }, reviewer: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 100 });
   }
   async decideReview(userId: string, organizationId: string, reviewId: string, input: { status: "APPROVED" | "CHANGES_REQUESTED" | "REJECTED"; comment?: string }) {
-    const member = await this.member(userId, organizationId);
-    if (!["OWNER", "ADMIN"].includes(member.role)) throw new ForbiddenException("Only workspace managers can decide reviews");
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "task.review");
     if (input.status !== "APPROVED" && !input.comment?.trim()) throw new BadRequestException("Add a comment explaining the requested changes");
     const review = await this.prisma.review.findFirst({ where: { id: reviewId, task: { organizationId } }, include: { task: { include: { assignees: true } } } });
     if (!review) throw new NotFoundException("Review not found");
@@ -54,9 +53,9 @@ export class WorkspaceToolsService {
     await this.sendPush(recipients, `Review ${input.status.toLowerCase().replaceAll("_", " ")}`, review.task.title);
     return result;
   }
-  async audit(userId: string, organizationId: string) { await this.member(userId, organizationId); return this.prisma.auditLog.findMany({ where: { organizationId }, include: { user: { select: { name: true } }, task: { select: { title: true } } }, orderBy: { createdAt: "desc" }, take: 100 }); }
+  async audit(userId: string, organizationId: string) { await requireOrganizationPermission(this.prisma, userId, organizationId, "audit.view"); return this.prisma.auditLog.findMany({ where: { organizationId }, include: { user: { select: { name: true } }, task: { select: { title: true } } }, orderBy: { createdAt: "desc" }, take: 100 }); }
   async report(userId: string, organizationId: string) {
-    await this.member(userId, organizationId);
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "report.view");
     const tasks = await this.prisma.task.findMany({ where: { organizationId, deletedAt: null }, select: { status: true, dueAt: true, updatedAt: true } });
     const time = await this.prisma.timeEntry.aggregate({ where: { task: { organizationId } }, _sum: { durationMinutes: true } });
     const counts: Record<string, number> = {};

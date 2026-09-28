@@ -35,5 +35,8 @@ export class OrganizationsController {
   @Post(":organizationId/roles") saveRole(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Body() body: SaveRoleDto) { return this.teams.saveRole(req.user.sub, orgId, body); }
   @Patch(":organizationId/members/:userId/role") assignRole(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Param("userId") userId: string, @Body() body: AssignRoleDto) { return this.teams.assignRole(req.user.sub, orgId, userId, body.roleId ?? null); }
   @Post(":organizationId/invitations") invite(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Body() body: InviteDto) { return this.service.invite(req.user.sub, orgId, body); }
+  @Get(":organizationId/invitations") invitations(@Req() req: AuthRequest, @Param("organizationId") orgId: string) { return this.service.listInvitations(req.user.sub, orgId); }
+  @Delete(":organizationId/invitations/:invitationId") revokeInvitation(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Param("invitationId") invitationId: string) { return this.service.revokeInvitation(req.user.sub, orgId, invitationId); }
+  @Post(":organizationId/invitations/:invitationId/resend") resendInvitation(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Param("invitationId") invitationId: string) { return this.service.resendInvitation(req.user.sub, orgId, invitationId); }
   @Post(":organizationId/invitations/accept") accept(@Req() req: AuthRequest, @Param("organizationId") orgId: string, @Body() body: AcceptInviteDto) { return this.service.acceptInvite(req.user.sub, orgId, body.token); }
 }

@@ -1,8 +1,9 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { requireOrganizationPermission } from "./access-control";
 const PERMISSION_CATALOG = [
   ["task.create", "Create tasks"], ["task.update", "Update tasks"], ["task.delete", "Delete tasks"], ["task.assign", "Assign tasks"], ["task.review", "Review submitted work"],
-  ["project.create", "Create projects"], ["project.manage", "Manage projects"], ["user.invite", "Invite organization members"], ["report.view", "View reports"], ["evidence.view", "View task evidence"], ["evidence.manage", "Manage task evidence"], ["audit.view", "View audit history"],
+  ["project.create", "Create projects"], ["project.manage", "Manage projects"], ["team.manage", "Manage teams"], ["user.invite", "Invite organization members"], ["report.view", "View reports"], ["report.export", "Export reports"], ["evidence.view", "View task evidence"], ["evidence.manage", "Manage task evidence"], ["audit.view", "View audit history"],
 ];
 @Injectable()
 export class TeamsService {
@@ -18,13 +19,13 @@ export class TeamsService {
   }
   // TEAM MEMBERSHIP: only organization members may join a team; org admins manage membership.
   async addMember(userId: string, organizationId: string, teamId: string, memberUserId: string) {
-    const actor = await this.member(userId, organizationId); if (!["OWNER", "ADMIN"].includes(actor.role)) throw new ForbiddenException();
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "team.manage");
     const [team, target] = await Promise.all([this.prisma.team.findFirst({ where: { id: teamId, organizationId }, select: { id: true } }), this.prisma.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId: memberUserId } }, select: { userId: true } })]);
     if (!team || !target) throw new NotFoundException("Team or organization member not found");
     return this.prisma.teamMember.upsert({ where: { teamId_userId: { teamId, userId: memberUserId } }, create: { teamId, userId: memberUserId }, update: {} });
   }
   async removeMember(userId: string, organizationId: string, teamId: string, memberUserId: string) {
-    const actor = await this.member(userId, organizationId); if (!["OWNER", "ADMIN"].includes(actor.role)) throw new ForbiddenException();
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "team.manage");
     const team = await this.prisma.team.findFirst({ where: { id: teamId, organizationId }, select: { id: true } }); if (!team) throw new NotFoundException("Team not found");
     const membership = await this.prisma.teamMember.findUnique({ where: { teamId_userId: { teamId, userId: memberUserId } } }); if (!membership) throw new NotFoundException("Team member not found");
     await this.prisma.teamMember.delete({ where: { teamId_userId: { teamId, userId: memberUserId } } });
@@ -62,7 +63,7 @@ export class TeamsService {
     return { updated: true };
   }
   async create(userId: string, organizationId: string, input: { workspaceId: string; name: string }) {
-    const member = await this.member(userId, organizationId); if (!["OWNER", "ADMIN"].includes(member.role)) throw new ForbiddenException();
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "team.manage");
     const workspace = await this.prisma.workspace.findFirst({ where: { id: input.workspaceId, organizationId }, select: { id: true } }); if (!workspace) throw new NotFoundException("Workspace not found");
     return this.prisma.team.create({ data: { organizationId, workspaceId: workspace.id, name: input.name.trim(), members: { create: { userId } } }, include: { members: { include: { user: { select: { id: true, name: true, email: true } } } } } });
   }

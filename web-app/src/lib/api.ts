@@ -33,4 +33,18 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
 
+// API DOWNLOAD: send the current access token for private evidence files and refresh once when needed.
+export async function apiBlob(path: string, retried = false): Promise<Blob> {
+  const headers = new Headers();
+  const token = typeof window !== "undefined" ? sessionStorage.getItem("flownexa-access-token") : null;
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`${apiUrl}${path}`, { headers, credentials: "include" });
+  if (response.status === 401 && !retried && await refreshAccessToken()) return apiBlob(path, true);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({})) as { message?: string | string[] };
+    throw new Error(Array.isArray(error.message) ? error.message.join("; ") : error.message ?? `Download failed (${response.status})`);
+  }
+  return response.blob();
+}
+
 export function saveAccessToken(token: string) { sessionStorage.setItem("flownexa-access-token", token); }

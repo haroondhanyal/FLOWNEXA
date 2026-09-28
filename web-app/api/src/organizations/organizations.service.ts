@@ -1,7 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes, randomUUID } from "node:crypto";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "../prisma/prisma.service";
+import { requireOrganizationPermission } from "./access-control";
 @Injectable()
 export class OrganizationsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -43,9 +44,11 @@ export class OrganizationsService {
     return membership;
   }
   async invite(userId: string, organizationId: string, input: { email: string; role: "ADMIN"|"MEMBER"|"VIEWER" }) {
-    const member = await this.assertMember(userId, organizationId);
-    if (!["OWNER", "ADMIN"].includes(member.role)) throw new ForbiddenException();
+    const member = await requireOrganizationPermission(this.prisma, userId, organizationId, "user.invite");
+    if (input.role === "ADMIN" && member.role !== "OWNER") throw new ForbiddenException("Only the organization owner can invite an administrator");
     const email = input.email.trim().toLowerCase();
+    const pending = await this.prisma.organizationInvitation.findFirst({ where: { organizationId, email, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, select: { id: true } });
+    if (pending) throw new BadRequestException("An active invitation already exists; resend it from the invitation list");
     const user = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (user && await this.prisma.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId: user.id } } })) throw new NotFoundException("This person is already in the organization");
     const rawToken = randomBytes(32).toString("base64url");
@@ -56,15 +59,38 @@ export class OrganizationsService {
   async acceptInvite(userId: string, organizationId: string, token: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
     if (!user) throw new NotFoundException("Invitation not found");
-    const invitations = await this.prisma.organizationInvitation.findMany({ where: { organizationId, email: user.email, acceptedAt: null, expiresAt: { gt: new Date() } }, take: 20 });
+    const invitations = await this.prisma.organizationInvitation.findMany({ where: { organizationId, email: user.email, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, take: 20 });
     let invitation = null;
     for (const candidate of invitations) if (await bcrypt.compare(token, candidate.tokenHash)) { invitation = candidate; break; }
     if (!invitation) throw new NotFoundException("Invitation not found or expired");
     return this.prisma.$transaction(async (tx) => {
       if (await tx.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } } })) throw new ForbiddenException("This account is already a member");
-      const claimed = await tx.organizationInvitation.updateMany({ where: { id: invitation!.id, acceptedAt: null }, data: { acceptedAt: new Date() } });
+      const claimed = await tx.organizationInvitation.updateMany({ where: { id: invitation!.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, data: { acceptedAt: new Date() } });
       if (claimed.count !== 1) throw new NotFoundException("Invitation has already been used");
       return tx.organizationMember.create({ data: { organizationId, userId, role: invitation!.role } });
     });
+  }
+  async listInvitations(userId: string, organizationId: string) {
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "user.invite");
+    const now = new Date();
+    const rows = await this.prisma.organizationInvitation.findMany({ where: { organizationId }, include: { inviter: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 100 });
+    return rows.map(({ tokenHash: _tokenHash, ...invitation }) => ({ ...invitation, status: invitation.acceptedAt ? "ACCEPTED" : invitation.revokedAt ? "REVOKED" : invitation.expiresAt <= now ? "EXPIRED" : "PENDING" }));
+  }
+  async revokeInvitation(userId: string, organizationId: string, invitationId: string) {
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "user.invite");
+    const result = await this.prisma.organizationInvitation.updateMany({ where: { id: invitationId, organizationId, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
+    if (!result.count) throw new NotFoundException("Pending invitation not found");
+    await this.prisma.auditLog.create({ data: { organizationId, userId, action: "INVITATION_REVOKED", details: { invitationId } } });
+    return { revoked: true };
+  }
+  async resendInvitation(userId: string, organizationId: string, invitationId: string) {
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "user.invite");
+    const invitation = await this.prisma.organizationInvitation.findFirst({ where: { id: invitationId, organizationId, acceptedAt: null } });
+    if (!invitation) throw new NotFoundException("Unaccepted invitation not found");
+    const token = randomBytes(32).toString("base64url");
+    const updated = await this.prisma.organizationInvitation.updateMany({ where: { id: invitation.id, acceptedAt: null }, data: { inviterId: userId, tokenHash: await bcrypt.hash(token, 12), expiresAt: new Date(Date.now() + 7 * 86400000), revokedAt: null } });
+    if (!updated.count) throw new NotFoundException("Invitation not found");
+    await this.prisma.auditLog.create({ data: { organizationId, userId, action: "INVITATION_RESENT", details: { invitationId } } });
+    return { id: invitation.id, email: invitation.email, role: invitation.role, inviteToken: token };
   }
 }

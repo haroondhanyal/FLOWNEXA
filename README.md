@@ -144,7 +144,7 @@ For a physical device, use the development computer's LAN address instead of `lo
 
 - Sign in/register, session refresh, expiring one-time email verification/password reset, workspace setup, projects, team management/invites, custom roles, and task assignment/status changes.
 - Overview, month calendar, reports with CSV export, search, notification inbox/read/archive, audit history, and review decisions.
-- Task activity: progress, next action/blocker, URL evidence references, threaded comments, manual time and a start/stop timer.
+- Task activity: progress, next action/blocker, URL and private file evidence, threaded comments, manual time and a start/stop timer.
 - AI assistant: workspace questions, weekly summaries, daily plan suggestions, and task breakdown suggestions.
 
 ### Mobile workspace
@@ -179,9 +179,9 @@ CI runs Prisma validation/client generation plus the API test/lint/build checks,
 
 This is an active product foundation, not a claim that every enterprise production feature is finished. Current known follow-ups include:
 
-- Custom organization roles and permission checks for task creation/updates and project creation/management are implemented. Password reset and email verification flows use hashed, expiring, single-use tokens; configure `RESEND_API_KEY`, a verified `EMAIL_FROM`, and `WEB_APP_URL` in the API environment. Set `REQUIRE_EMAIL_VERIFICATION=true` to gate new registrations and sign-ins on verification. Complete permission enforcement across invitations, reviews, evidence, reports, and audit access, plus invitation revoke/resend, remain.
-- Organization member directory, team creation, and team membership management are implemented. Add invitation state/lifecycle controls and broader member administration.
-- Binary evidence uploads with private object storage; mobile camera images are still local drafts.
+- Custom organization roles now enforce permissions across task/project/team changes, invitations, reviews, evidence, reports, and audit access. Invitation listing, resend (with token rotation), and revoke are available. Password reset and email verification flows use hashed, expiring, single-use tokens; configure `RESEND_API_KEY`, a verified `EMAIL_FROM`, and `WEB_APP_URL` in the API environment. Set `REQUIRE_EMAIL_VERIFICATION=true` to gate new registrations and sign-ins on verification.
+- Organization member directory, team creation, team membership management, and invitation lifecycle controls are implemented. Broader member administration remains future work.
+- Private API-served evidence uploads (PNG/JPEG/PDF/UTF-8 text, 10 MB limit) use randomized filenames, content-signature checks, permission-gated downloads, and a persistent Docker volume. S3-compatible object storage/signing and file malware scanning remain production deployment work; mobile camera images are still local drafts.
 - Per-event notification preferences, resilient queued/retry push delivery, and broader browser end-to-end coverage.
 - Hosted production secrets/database, deployment configuration, monitoring, backups, and operational runbooks.
 

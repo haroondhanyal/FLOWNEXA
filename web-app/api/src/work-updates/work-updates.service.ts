@@ -1,6 +1,12 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { EventsGateway } from "../events/events.gateway";
+import { requireOrganizationPermission } from "../organizations/access-control";
+import { createReadStream } from "node:fs";
+import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import { basename, resolve, sep } from "node:path";
+import { randomUUID } from "node:crypto";
+export type MemoryEvidenceFile = { buffer: Buffer; size: number; originalname: string };
 @Injectable()
 export class WorkUpdatesService {
   constructor(private readonly prisma: PrismaService, private readonly events: EventsGateway) {}
@@ -10,21 +16,68 @@ export class WorkUpdatesService {
     this.events.publish(organizationId, "notification.created", { taskId });
   }
   private async task(userId: string, organizationId: string, taskId: string, write = false) {
-    const member = await this.prisma.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } } });
-    if (!member) throw new NotFoundException("Task not found");
-    if (write && member.role === "VIEWER") throw new ForbiddenException();
+    if (write) await requireOrganizationPermission(this.prisma, userId, organizationId, "task.update");
+    else if (!await this.prisma.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } }, select: { id: true } })) throw new NotFoundException("Task not found");
     const task = await this.prisma.task.findFirst({ where: { id: taskId, organizationId, deletedAt: null }, select: { id: true } });
     if (!task) throw new NotFoundException("Task not found");
     return task;
   }
+  // PRIVATE EVIDENCE: allow only inspected file signatures, random storage keys and authenticated downloads.
+  async uploadEvidence(userId: string, organizationId: string, taskId: string, file: MemoryEvidenceFile) {
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "evidence.manage");
+    const task = await this.prisma.task.findFirst({ where: { id: taskId, organizationId, deletedAt: null }, select: { id: true } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (!file?.buffer?.length || file.size > 10 * 1024 * 1024) throw new BadRequestException("Select a file up to 10 MB");
+    const signature = this.inspectEvidence(file.buffer);
+    if (!signature) throw new BadRequestException("Only PNG, JPEG, PDF, and UTF-8 text files are allowed");
+    const fileName = basename(file.originalname).replace(/[\\/\p{Cc}]/gu, "_").slice(0, 180) || `evidence${signature.extension}`;
+    const storageKey = `${randomUUID()}${signature.extension}`;
+    const storageRoot = resolve(process.env.EVIDENCE_STORAGE_DIR ?? resolve(process.cwd(), "storage", "private-evidence"));
+    const filePath = resolve(storageRoot, storageKey);
+    if (!filePath.startsWith(`${storageRoot}${sep}`)) throw new BadRequestException("Invalid storage key");
+    await mkdir(storageRoot, { recursive: true, mode: 0o700 });
+    await writeFile(filePath, file.buffer, { flag: "wx", mode: 0o600 });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const evidence = await tx.evidence.create({ data: { taskId, uploaderId: userId, fileName, storageKey, mimeType: signature.mimeType, sizeBytes: BigInt(file.size) } });
+        await tx.auditLog.create({ data: { organizationId, taskId, userId, action: "EVIDENCE_UPLOADED", details: { evidenceId: evidence.id, fileName, mimeType: signature.mimeType, sizeBytes: file.size } } });
+        this.events.publish(organizationId, "evidence.created", { taskId, evidenceId: evidence.id });
+        return evidence;
+      });
+    } catch (error) { await unlink(filePath).catch(() => undefined); throw error; }
+  }
+  private inspectEvidence(buffer: Buffer): { mimeType: string; extension: string } | null {
+    if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return { mimeType: "image/png", extension: ".png" };
+    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return { mimeType: "image/jpeg", extension: ".jpg" };
+    if (buffer.length >= 5 && buffer.subarray(0, 5).toString("ascii") === "%PDF-") return { mimeType: "application/pdf", extension: ".pdf" };
+    if (!buffer.includes(0)) { try { new TextDecoder("utf-8", { fatal: true }).decode(buffer); return { mimeType: "text/plain", extension: ".txt" }; } catch { /* Not valid UTF-8 text; reject below. */ } }
+    return null;
+  }
+  async evidenceDownload(userId: string, organizationId: string, taskId: string, evidenceId: string) {
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "evidence.view");
+    const evidence = await this.prisma.evidence.findFirst({ where: { id: evidenceId, taskId, task: { organizationId, deletedAt: null } } });
+    if (!evidence) throw new NotFoundException("Evidence not found");
+    if (/^https?:\/\//i.test(evidence.storageKey)) throw new BadRequestException("External URL evidence does not use the file download route");
+    const storageRoot = resolve(process.env.EVIDENCE_STORAGE_DIR ?? resolve(process.cwd(), "storage", "private-evidence"));
+    const filePath = resolve(storageRoot, evidence.storageKey);
+    if (!filePath.startsWith(`${storageRoot}${sep}`)) throw new NotFoundException("Evidence file not found");
+    try { await stat(filePath); } catch { throw new NotFoundException("Evidence file not found"); }
+    return { stream: createReadStream(filePath), fileName: evidence.fileName, mimeType: evidence.mimeType };
+  }
+  async listEvidence(userId: string, organizationId: string, taskId: string) {
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "evidence.view");
+    const task = await this.prisma.task.findFirst({ where: { id: taskId, organizationId, deletedAt: null }, select: { id: true } });
+    if (!task) throw new NotFoundException("Task not found");
+    return this.prisma.evidence.findMany({ where: { taskId }, include: { uploader: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } });
+  }
   async organizationUpdates(userId: string, organizationId: string) {
-    const member = await this.prisma.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } }, select: { id: true } });
-    if (!member) throw new NotFoundException("Organization not found");
+    await requireOrganizationPermission(this.prisma, userId, organizationId, "evidence.view");
     return this.prisma.workUpdate.findMany({ where: { task: { organizationId, deletedAt: null } }, include: { user: { select: { id: true, name: true } }, task: { select: { id: true, title: true } }, evidence: true }, orderBy: { submittedAt: "desc" }, take: 100 });
   }
-  async list(userId: string, organizationId: string, taskId: string) { await this.task(userId, organizationId, taskId); return this.prisma.workUpdate.findMany({ where: { taskId }, include: { user: { select: { id: true, name: true } }, evidence: true }, orderBy: { submittedAt: "desc" }, take: 100 }); }
+  async list(userId: string, organizationId: string, taskId: string) { await this.task(userId, organizationId, taskId); await requireOrganizationPermission(this.prisma, userId, organizationId, "evidence.view"); return this.prisma.workUpdate.findMany({ where: { taskId }, include: { user: { select: { id: true, name: true } }, evidence: true }, orderBy: { submittedAt: "desc" }, take: 100 }); }
   async create(userId: string, organizationId: string, taskId: string, input: { progress: number; completed: string; nextAction?: string; blocker?: string; evidenceUrls?: string[] }) {
     await this.task(userId, organizationId, taskId, true);
+    if (input.evidenceUrls?.length) await requireOrganizationPermission(this.prisma, userId, organizationId, "evidence.manage");
     const update = await this.prisma.$transaction(async (tx) => {
       const update = await tx.workUpdate.create({ data: { taskId, userId, progress: input.progress, completed: input.completed.trim(), nextAction: input.nextAction?.trim(), blocker: input.blocker?.trim() } });
       await tx.task.update({ where: { id: taskId }, data: { progress: input.progress } });

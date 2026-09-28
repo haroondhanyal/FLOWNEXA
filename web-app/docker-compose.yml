@@ -34,7 +34,9 @@ services:
       DATABASE_URL: postgresql://flownexa:${POSTGRES_PASSWORD:-local-dev-only-change-me}@postgres:5432/flownexa?schema=public
       REDIS_URL: redis://redis:6379
       WEB_ORIGIN: http://localhost:3000
+      EVIDENCE_STORAGE_DIR: /app/api/storage/private-evidence
     ports: ["4000:4000"]
+    volumes: ["flownexa-evidence:/app/api/storage/private-evidence"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,3 +54,4 @@ services:
 volumes:
   flownexa-postgres:
   flownexa-redis:
+  flownexa-evidence:

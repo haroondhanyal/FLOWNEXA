@@ -1,7 +1,7 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
-const MEMBER_DEFAULTS = new Set(["task.create", "task.update", "task.assign", "project.create", "report.view", "evidence.view"]);
+const MEMBER_DEFAULTS = new Set(["task.create", "task.update", "task.assign", "project.create", "report.view", "evidence.view", "evidence.manage"]);
 
 // PERMISSION CHECK: owners/admins keep administration access; custom member roles use their explicit grants.
 export async function requireOrganizationPermission(prisma: Pick<PrismaService, "organizationMember">, userId: string, organizationId: string, permission: string) {
