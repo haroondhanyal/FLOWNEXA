@@ -94,9 +94,11 @@ export function useWorkspaceData(query: string, onMessage: (message: string) => 
     const project = projectRecords.find((item) => item.id === String(form.get("project"))) ?? projectRecords[0];
     if (!project?.id) { onMessage("Create a project before adding tasks"); return; }
     try {
-      const saved = await apiFetch<{ id: string; title: string; status: string; priority: string; project: { id: string; name: string }; dueAt: string | null }>(`/organizations/${organizationId}/tasks`, { method: "POST", body: JSON.stringify({ projectId: project.id, title, priority: String(form.get("priority") || "MEDIUM").toUpperCase(), dueAt: form.get("due") ? new Date(`${String(form.get("due"))}T23:59:00`).toISOString() : undefined }) });
-      const initials = currentUser.name.split(" ").map((part) => part[0]).join("").slice(0, 2);
-      const task: TaskRecord = { id: saved.id, title: saved.title, project: saved.project.name, projectId: saved.project.id, initials, person: "Unassigned", color: "lavender", date: saved.dueAt ? new Date(saved.dueAt).toLocaleDateString() : "No date", state: displayTaskStatus[saved.status] ?? "To do", priority: saved.priority[0] + saved.priority.slice(1).toLowerCase() };
+      const assigneeIds = form.getAll("assigneeIds").map(String).filter(Boolean);
+      const saved = await apiFetch<{ id: string; title: string; status: string; priority: string; project: { id: string; name: string }; dueAt: string | null; assignees: { user: { name: string } }[] }>(`/organizations/${organizationId}/tasks`, { method: "POST", body: JSON.stringify({ projectId: project.id, title, assigneeIds, priority: String(form.get("priority") || "MEDIUM").toUpperCase(), dueAt: form.get("due") ? new Date(`${String(form.get("due"))}T23:59:00`).toISOString() : undefined }) });
+      const person = saved.assignees.map((assignee) => assignee.user.name).join(", ") || "Unassigned";
+      const initials = person === "Unassigned" ? "--" : person.split(" ").map((part) => part[0]).join("").slice(0, 2);
+      const task: TaskRecord = { id: saved.id, title: saved.title, project: saved.project.name, projectId: saved.project.id, initials, person, color: "lavender", date: saved.dueAt ? new Date(saved.dueAt).toLocaleDateString() : "No date", state: displayTaskStatus[saved.status] ?? "To do", priority: saved.priority[0] + saved.priority.slice(1).toLowerCase() };
       setTaskRecords((records) => [task, ...records]);
       onTaskCreated();
       onMessage("Task created");
