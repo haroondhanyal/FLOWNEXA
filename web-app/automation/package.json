@@ -1,0 +1,42 @@
+{
+  "name": "flownexa-web-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright UI, API, BDD, smoke, regression and negative automation for FlowNexa web app",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "test": "node scripts/run-tests-and-report.js",
+    "test:max": "playwright test -c config/playwright.config.ts --workers=100%",
+    "test:api": "playwright test -c config/playwright.config.ts tests/api",
+    "test:ui": "playwright test -c config/playwright.config.ts tests/ui",
+    "test:bdd": "playwright test -c config/playwright.config.ts tests/bdd",
+    "test:smoke": "playwright test -c config/playwright.config.ts tests/smoke",
+    "test:regression": "playwright test -c config/playwright.config.ts tests/regression",
+    "test:negative": "playwright test -c config/playwright.config.ts tests/negative",
+    "test:db": "node scripts/run-db-tests.js tests/db",
+    "test:db:all": "node scripts/run-db-tests.js tests/db tests/integration",
+    "test:integration": "node scripts/run-db-tests.js tests/integration",
+    "test:ui-db": "node scripts/run-db-tests.js tests/integration/web-db",
+    "test:api-db": "node scripts/run-db-tests.js tests/integration/api-db",
+    "seed:db:40": "node scripts/seed-faker-db.mjs",
+    "test:headed": "playwright test -c config/playwright.config.ts --headed",
+    "test:debug": "playwright test -c config/playwright.config.ts --debug",
+    "test:list": "playwright test -c config/playwright.config.ts --list",
+    "report:allure": "node scripts/build-allure-report.js",
+    "report:db": "node scripts/generate-db-report.mjs",
+    "report:open": "env -u JAVA_HOME allure open allure-report",
+    "report:k6": "node scripts/prepare-k6-report.mjs && node scripts/run-k6.mjs && node scripts/render-k6-report.mjs && node scripts/build-allure-report.js",
+    "report:history": "node scripts/prepare-allure-history.mjs",
+    "clean": "node scripts/clean.mjs",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^9.9.0",
+    "@playwright/test": "^1.55.0",
+    "allure-js-commons": "^3.13.0",
+    "allure-commandline": "^2.46.1",
+    "allure-playwright": "^3.4.1",
+    "dotenv": "^16.4.7",
+    "typescript": "^5.7.2"
+  }
+}

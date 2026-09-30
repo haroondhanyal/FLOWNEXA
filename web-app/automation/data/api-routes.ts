@@ -1,0 +1,35 @@
+// SECURITY CONTRACT: protected endpoints must reject every missing or malformed bearer credential.
+export const protectedRoutes = [
+  { method: "GET", path: "/auth/me" },
+  { method: "PATCH", path: "/auth/password", body: {} },
+  { method: "GET", path: "/organizations" },
+  { method: "POST", path: "/organizations", body: {} },
+  { method: "GET", path: "/organizations/:org/projects" },
+  { method: "GET", path: "/organizations/:org/tasks" },
+  { method: "GET", path: "/organizations/:org/teams" },
+  { method: "GET", path: "/organizations/:org/members" },
+  { method: "GET", path: "/organizations/:org/reviews" },
+  { method: "GET", path: "/organizations/:org/audit-history" },
+  { method: "GET", path: "/organizations/:org/reports/summary" },
+  { method: "GET", path: "/organizations/:org/notifications" },
+  { method: "GET", path: "/organizations/:org/work-updates" },
+  { method: "GET", path: "/organizations/:org/roles" },
+  { method: "GET", path: "/organizations/:org/invitations" },
+  { method: "POST", path: "/ai/ask", body: {} },
+  { method: "POST", path: "/ai/weekly-summary", body: {} },
+  { method: "POST", path: "/ai/daily-plan", body: {} },
+  { method: "POST", path: "/ai/task-breakdown", body: {} },
+] as const;
+
+export const authProbes = [
+  { name: "no authorization header", headers: {} },
+  { name: "empty bearer value", headers: { Authorization: "Bearer " } },
+  { name: "missing bearer value", headers: { Authorization: "Bearer" } },
+  { name: "basic scheme", headers: { Authorization: "Basic Zm9vOmJhcg==" } },
+  { name: "invalid token text", headers: { Authorization: "Bearer invalid-token" } },
+  { name: "malformed jwt segments", headers: { Authorization: "Bearer a.b.c" } },
+  { name: "wrong header casing", headers: { authorization: "Token fake-token" } },
+  { name: "query-string token only", headers: {} , query: "?access_token=fake-token" },
+  { name: "cookie token only", headers: { Cookie: "access_token=fake-token" } },
+  { name: "trailing whitespace token", headers: { Authorization: "Bearer invalid-token " } },
+] as const;

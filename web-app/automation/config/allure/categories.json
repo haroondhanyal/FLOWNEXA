@@ -1,0 +1,41 @@
+[
+  {
+    "name": "Product Defects",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s)(?!.*(HTTP ?(400|401|403|404|409|500|502|503|504)|status( code)? (400|401|403|404|409|500|502|503|504)|Received: ?(400|401|403|404|409|500|502|503|504))).*(AssertionError|Expected:|Actual:|expected .* to (equal|be|contain|match)|business[- ]rule|functional validation|incorrect application behavior).*"
+  },
+  {
+    "name": "Automation / Test Defects",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": "(?s).*(locator not found|element not found|strict mode violation|selector|detached (element|node)|resolved to .* elements|automation script|test framework|beforeEach|afterEach|fixture error).*"
+  },
+  {
+    "name": "API / Integration Issues",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": "(?s).*(HTTP ?(400|401|403|404|409|500|502|503|504)|status( code)? (400|401|403|404|409|500|502|503|504)|Received: ?(400|401|403|404|409|500|502|503|504)|API failure|API request failed|JSON schema|schema mismatch|integration failure|service failure).*"
+  },
+  {
+    "name": "Environment / Infrastructure Issues",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": "(?s).*(ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|network error|net::ERR|server unavailable|database connection|browser (crash|closed)|browser has been closed|target page.*closed|test environment unavailable|fetch failed|socket hang up).*"
+  },
+  {
+    "name": "Test Data Issues",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": "(?s).*(test data (missing|not found|unavailable)|customer.*not found|account.*not found|invalid test data|duplicate data|required data unavailable).*"
+  },
+  {
+    "name": "Timeout / Performance Issues",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": "(?s).*(TimeoutError|timeout|timed out|slow response|performance threshold|navigation timeout|API timeout|waiting timeout).*"
+  },
+  {
+    "name": "Known Issues",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": "(?s).*(known bug|known issue|expected failure|third[- ]party known issue).*"
+  },
+  {
+    "name": "Skipped / Pending",
+    "matchedStatuses": ["skipped", "unknown"]
+  }
+]

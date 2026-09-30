@@ -1,0 +1,2 @@
+import { expect, test } from "../../../../fixtures/test";
+test("Work updates / opens from My work and presents activity view", async ({ app }) => { await app.open(); await app.openScreen("My work"); await app.page.getByRole("button", { name: "Work updates" }).click(); await expect(app.locators.breadcrumb).toHaveText("Work updates"); await expect(app.page.locator(".workspace-view")).toBeVisible(); });

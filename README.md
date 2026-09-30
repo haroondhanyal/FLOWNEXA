@@ -59,6 +59,16 @@ flowchart LR
 4. Successful changes publish organization-scoped Socket.IO events. Connected members refresh the relevant screen; stored inbox notifications remain available after reconnect.
 5. Optional AI requests are made by the API using bounded workspace context. The AI key remains on the server; plans and task breakdowns are suggestions and do not create records.
 
+### Web overview workflow
+
+The Overview screen presents the product loop as three actionable stages:
+
+1. **Plan** counts tasks in `To do` and links into the task list so owners can create, prioritize, assign, and schedule work.
+2. **Execute** counts `In progress` tasks and calls out blocked work. The attention strip also surfaces overdue tasks using the task due dates.
+3. **Prove** counts tasks in `In review` and links directly to Reviews, where a reviewer can inspect submitted progress and evidence.
+
+The stage totals use the task records already loaded for the active organization. The existing task, project, and update panels remain the detail views; the Overview is an at-a-glance routing surface, not a second workflow database.
+
 ## Repository layout
 
 ```text
@@ -67,6 +77,7 @@ flowchart LR
 ├── docs/WEB-TEAM-TASKS.md
 ├── mobile-app/                  # Expo client
 └── web-app/
+    ├── automation/              # Playwright UI/API/BDD/release suites + classic Allure 2 report
     ├── src/                     # Next.js app and workspace screens
     ├── api/src/                 # NestJS REST, auth, events, AI, services
     ├── database/prisma/         # PostgreSQL schema and migrations
@@ -148,7 +159,7 @@ For a physical device, use the development computer's LAN address instead of `lo
 - Shared workspace notes with author-aware edit/delete controls, rich text, headings, lists, links, colors/highlights, tables, inline images, and a sandboxed preview.
 - Multi-workspace switcher grouped by organization, workspace-specific project/task/team views, and owner/admin controls to create workspaces or edit their name and logo.
 - Profile and account settings for name, phone, PNG/JPEG profile photo, workspace role visibility, password changes, plus browser-saved light/dark/warm themes, accent colors, and background textures.
-- AI assistant: workspace questions, weekly summaries, daily plan suggestions, and task breakdown suggestions.
+- AI assistant: Roman Urdu/English workspace answers, keyword-ranked task/project/note search, optional web search, image analysis, PDF reading, and TXT/MD/CSV/JSON attachments. Follow-up questions carry up to 8 recent user/assistant turns in the current page session; Clear chat removes that in-memory transcript. Files are sent to the configured AI provider only when a request is submitted; attachments are limited to 3 files, 2 MB each, and 5 MB combined.
 
 ### Mobile workspace
 
@@ -178,6 +189,10 @@ npm run build
 
 CI runs Prisma validation/client generation plus the API test/lint/build checks, the web typecheck/lint/build checks, and mobile typechecking for changes to the `mobile-app` branch.
 
+## Web automation
+
+The web app has a dedicated [web guide](web-app/README.md) with product setup, automation workflows, and screenshots of the Allure, Categories, DB, combined, and k6 reports. The [automation guide](web-app/automation/README.md) documents Playwright suite structure, fixtures, report commands, DB setup, and k6 cases. The existing Playwright project keeps its centralized locators/page objects, `.env` configuration, Faker/date helpers, API/UI/BDD/smoke/regression/negative/database suites, and screenshot/video/trace capture. Use a dedicated test account and disposable workspace for authenticated runs.
+
 ## Current scope and follow-ups
 
 This is an active product foundation, not a claim that every enterprise production feature is finished. Current known follow-ups include:
@@ -188,7 +203,7 @@ This is an active product foundation, not a claim that every enterprise producti
 - Per-event notification preferences, resilient queued/retry push delivery, and broader browser end-to-end coverage. Profile photos are currently stored as small data URLs in the user record; move them to private object storage for production-scale accounts.
 - Hosted production secrets/database, deployment configuration, monitoring, backups, and operational runbooks.
 
-Keep API keys and production secrets out of client bundles and Git. Configure `AI_API_KEY` and `AI_MODEL` only in the API environment when enabling AI. Email delivery uses the Resend API from the server only.
+Keep API keys and production secrets out of client bundles and Git. The AI assistant defaults to OpenRouter's free model router (`openrouter/free`); set an OpenRouter key as `AI_API_KEY` only in the API environment. Override `AI_API_URL` or `AI_MODEL` there if you use another OpenAI-compatible provider. Email delivery uses the Resend API from the server only.
 
 ## Product identity
 

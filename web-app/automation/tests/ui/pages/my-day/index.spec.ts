@@ -1,0 +1,2 @@
+import { expect, test } from "../../../../fixtures/test";
+test("My day / opens from My work without leaving the workspace", async ({ app }) => { await app.open(); await app.openScreen("My work"); await app.page.getByRole("button", { name: "My day", exact: true }).click(); await expect(app.locators.breadcrumb).toHaveText("My day"); await expect(app.page.locator(".workspace-view")).toBeVisible(); });

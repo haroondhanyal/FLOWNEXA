@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.auth/
+allure-results/
+db-report/
+allure-report/
+playwright-report/
+test-results/
+artifacts/*
+!artifacts/.gitkeep

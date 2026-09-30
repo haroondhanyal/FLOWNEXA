@@ -1,0 +1,11 @@
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
+const root = path.resolve(__dirname, "..");
+const cli = require.resolve("@playwright/test/cli");
+const targets = process.argv.slice(2);
+if (!targets.length) targets.push("tests/db");
+const run = spawnSync(process.execPath, [cli, "test", "-c", "config/playwright.config.ts", ...targets], { cwd: root, stdio: "inherit", env: process.env });
+if (run.error) throw run.error;
+const report = spawnSync(process.execPath, [path.join(root, "scripts", "build-allure-report.js")], { cwd: root, stdio: "inherit", env: process.env });
+if (report.error) throw report.error;
+process.exit(run.status || report.status || 0);

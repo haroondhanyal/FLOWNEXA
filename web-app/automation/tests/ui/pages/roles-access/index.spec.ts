@@ -1,0 +1,3 @@
+import { faker } from "@faker-js/faker";
+import { expect, test } from "../../../../fixtures/test";
+test("Roles and access / custom role name has required-field validation", async ({ app }) => { await app.open(); await app.openScreen("Teams"); await app.page.getByRole("button", { name: "Roles & access" }).click(); const input = app.page.getByPlaceholder("e.g. Reviewer"); await expect(input).toBeVisible(); expect(await input.evaluate((node: HTMLInputElement) => node.validity.valueMissing)).toBe(true); await input.fill(faker.person.jobTitle()); expect(await input.evaluate((node: HTMLInputElement) => node.validity.valid)).toBe(true); await expect(app.page.getByRole("button", { name: "Create role" })).toBeEnabled(); });

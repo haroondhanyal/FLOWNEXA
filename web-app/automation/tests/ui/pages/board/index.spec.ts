@@ -1,0 +1,2 @@
+import { expect, test } from "../../../../fixtures/test";
+test("Board view / opens from My work and renders status columns", async ({ app }) => { await app.open(); await app.openScreen("My work"); await app.page.getByRole("button", { name: "Board view" }).click(); await expect(app.locators.breadcrumb).toHaveText("Board"); await expect(app.page.locator(".workspace-view")).toBeVisible(); await expect(app.page.getByText("Page not found", { exact: true })).toHaveCount(0); });
