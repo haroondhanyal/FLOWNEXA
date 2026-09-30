@@ -191,7 +191,23 @@ CI runs Prisma validation/client generation plus the API test/lint/build checks,
 
 ## Web automation
 
-The web app has a dedicated [web guide](web-app/README.md) with product setup, automation workflows, and screenshots of the Allure, Categories, DB, combined, and k6 reports. The [automation guide](web-app/automation/README.md) documents Playwright suite structure, fixtures, report commands, DB setup, and k6 cases. The existing Playwright project keeps its centralized locators/page objects, `.env` configuration, Faker/date helpers, API/UI/BDD/smoke/regression/negative/database suites, and screenshot/video/trace capture. Use a dedicated test account and disposable workspace for authenticated runs.
+The web app has a dedicated [web guide](web-app/README.md) with product setup, automation workflows, report screenshots, and a full breakdown of the **961-case** run: 190 API, 279 UI, 150 BDD, 120 smoke, 120 regression, 70 negative, 30 DB, and 2 API/web-to-DB integration cases. The k6 performance suite adds 120 authenticated, read-only API workloads. The [automation guide](web-app/automation/README.md) documents Playwright suite structure, fixtures, report commands, DB setup, and k6 cases. The existing Playwright project keeps its centralized locators/page objects, `.env` configuration, Faker/date helpers, API/UI/BDD/smoke/regression/negative/database suites, and screenshot/video/trace capture. Use a dedicated test account and disposable workspace for authenticated runs.
+
+### Report screenshots
+
+Allure Overview and Categories, the linked report home, the database report, and complete-page captures of both k6 reports:
+
+![Allure Overview](web-app/docs/automation/assets/allure-overview.png)
+
+![Allure Categories](web-app/docs/automation/assets/allure-categories.png)
+
+![Combined report home](web-app/docs/automation/assets/combined-report-home.png)
+
+![Database report](web-app/docs/automation/assets/database-report.png)
+
+[![Full performance report with all 120 k6 case rows — open full size](web-app/docs/automation/assets/performance-report-full.png)](web-app/docs/automation/assets/performance-report-full.png)
+
+[![Full native k6 report with all 120 workload charts and detailed rows — open full size](web-app/docs/automation/assets/native-k6-report-full.png)](web-app/docs/automation/assets/native-k6-report-full.png)
 
 ## Current scope and follow-ups
 

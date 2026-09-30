@@ -163,11 +163,13 @@ The screenshot is from a clean run with no failures or skips, so all category co
 
 The k6 suite defines **120 named, authenticated, read-only API workloads**. The run uses up to 120 virtual users and checks HTTP success, response-time thresholds, request throughput, and latency percentiles. Requests do not create or update application data. The runner uses an installed Grafana k6 CLI when available, otherwise it invokes the official `grafana/k6` Docker image.
 
-![Combined k6 performance report with run metrics and per-case rows](docs/automation/assets/performance-report.png)
+![Full FlowNexa performance report with the 120-workload latency chart and all case rows](docs/automation/assets/performance-report-full.png)
 
-The native report is generated from the k6 summary and shows aggregate and endpoint-group graphs, latency for all 120 workload cases, and expandable per-case request/response metadata. Authorization values are redacted. k6 summary artifacts do not retain response bodies; inspect the corresponding API test in Allure for captured API evidence.
+The screenshot shows the populated report from the documented run: 120 cases and requests, 100% checks passed, and a 620.2 ms overall P95. It includes the complete per-case table, with expandable request and response metadata. Authorization values are redacted.
 
-![Native k6 report with 120 workload cases, endpoint latency and per-case charts](docs/automation/assets/native-k6-report.png)
+![Full native k6 report with summary statistics, endpoint latency, all 120 workload charts, and detailed case rows](docs/automation/assets/native-k6-report-full.png)
+
+The native k6 screenshot includes the full page and all 120 cases. k6 summary artifacts do not retain response bodies; inspect the corresponding API test in Allure for captured API evidence.
 
 ## Database automation and reports
 
