@@ -2,7 +2,7 @@ import { test, expect, request, type APIRequestContext } from "@playwright/test"
 import { authProbes, protectedRoutes } from "../../data/api-routes";
 import { env } from "../../config/env";
 
-// API CONTRACT CASES (150): 15 protected endpoints × 10 invalid credential shapes.
+// API CONTRACT CASES (190): 19 protected endpoints × 10 invalid credential shapes.
 test.describe("API authentication contracts @api", () => {
   let api: APIRequestContext;
   test.beforeAll(async () => { api = await request.newContext({ baseURL: env.apiBaseUrl, extraHTTPHeaders: { Accept: "application/json" } }); });

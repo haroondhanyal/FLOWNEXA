@@ -9,3 +9,6 @@ playwright-report/
 test-results/
 artifacts/*
 !artifacts/.gitkeep
+.ci-artifacts/
+ci-history/
+ci-run/

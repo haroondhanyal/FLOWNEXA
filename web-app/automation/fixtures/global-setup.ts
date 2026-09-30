@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { request } from "@playwright/test";
 import { env } from "../config/env";
 
@@ -62,6 +63,17 @@ export default async function globalSetup() {
     const state = await api.storageState();
     await fs.writeFile(sessionFile, JSON.stringify({ accessToken, cookies: state.cookies, organizationId, workspaceId }), { mode: 0o600 });
     await fs.chmod(sessionFile, 0o600);
+    // CI seeds only its disposable PostgreSQL service after this setup has created the QA workspace.
+    if (process.env.CI_SEED_FAKER_DB === "true") {
+      const seedScript = path.resolve(__dirname, "../scripts/seed-faker-db.mjs");
+      const seed = spawnSync(process.execPath, [seedScript], {
+        cwd: path.resolve(__dirname, ".."),
+        env: process.env,
+        stdio: "inherit",
+      });
+      if (seed.error) throw seed.error;
+      if (seed.status !== 0) throw new Error(`CI Faker seed failed with exit code ${seed.status ?? "unknown"}.`);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH|EPERM/i.test(message)) {

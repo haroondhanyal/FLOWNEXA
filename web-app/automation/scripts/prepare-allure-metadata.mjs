@@ -42,16 +42,23 @@ const environment = [
   ["Owner", "Raja Haroon Jamal"],
   ["Department", "QA Department"],
   ["Role", "Full Stack QA Automation"],
-  ["Environment", "Dedicated QA test environment"],
-  ["Coverage", "Web UI, API contracts, user journeys, smoke, regression, and negative cases"],
+  ["Environment", process.env.GITHUB_ACTIONS === "true" ? "GitHub Actions · disposable PostgreSQL" : "Dedicated QA test environment"],
+  ["Coverage", "Web UI, API contracts, user journeys, smoke, regression, negative cases, and database integration"],
 ];
 await fs.writeFile(path.join(results, "environment.properties"), `${environment.map(([key, value]) => `${key}=${value}`).join("\n")}\n`);
 const timestamp = new Date();
+const inGitHubActions = process.env.GITHUB_ACTIONS === "true";
+const workflowUrl = process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
+  ? `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+  : undefined;
 await fs.writeFile(path.join(results, "executor.json"), JSON.stringify({
-  name: "FlowNexa Playwright",
-  type: "local",
-  buildName: `FlowNexa QA · ${timestamp.toLocaleString("en-PK", { timeZone: "Asia/Karachi" })}`,
-  buildOrder: Math.floor(timestamp.getTime() / 1000),
+  name: inGitHubActions ? "GitHub Actions" : "FlowNexa Playwright",
+  type: inGitHubActions ? "github" : "local",
+  buildName: inGitHubActions && process.env.GITHUB_WORKFLOW
+    ? `${process.env.GITHUB_WORKFLOW} #${process.env.GITHUB_RUN_NUMBER ?? process.env.GITHUB_RUN_ID}`
+    : `FlowNexa QA · ${timestamp.toLocaleString("en-PK", { timeZone: "Asia/Karachi" })}`,
+  buildOrder: Number(process.env.GITHUB_RUN_NUMBER) || Math.floor(timestamp.getTime() / 1000),
+  buildUrl: workflowUrl,
   reportName: "FlowNexa Allure Report",
   reportUrl: "report-home.html",
 }, null, 2));

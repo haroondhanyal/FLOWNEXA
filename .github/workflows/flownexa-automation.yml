@@ -1,0 +1,662 @@
+name: FlowNexa Automation Pipeline
+
+on:
+  # Deliberately manual: ordinary pushes and pull requests never start this suite.
+  workflow_dispatch:
+
+concurrency:
+  group: flownexa-automation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  setup-check:
+    name: Setup and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web-app/automation/package-lock.json
+            web-app/api/package-lock.json
+            web-app/package-lock.json
+
+      - name: Validate lockfiles and discover current Playwright cases
+        working-directory: web-app/automation
+        run: |
+          npm ci
+          npm ci --prefix ../api
+          npm ci --prefix ..
+          npm run prisma:generate --prefix ../api
+          npm run test:list > "$RUNNER_TEMP/flownexa-test-list.txt"
+          tail -n 1 "$RUNNER_TEMP/flownexa-test-list.txt"
+
+  ui-tests:
+    name: UI, BDD, smoke, regression and negative
+    needs: setup-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: flownexa
+          POSTGRES_USER: flownexa
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flownexa -d flownexa"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://flownexa:ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/flownexa?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      DB_ENVIRONMENT: test
+      DB_MUTATION_TESTS: "false"
+      WEB_BASE_URL: http://127.0.0.1:3100
+      API_BASE_URL: http://127.0.0.1:4000/api/v1
+      PW_BROWSER: chromium
+      PW_HEADLESS: "true"
+      PW_WORKERS: "2"
+      PW_START_WEB_SERVER: "false"
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:4000/api/v1
+      PORT: "4000"
+      WEB_ORIGIN: http://127.0.0.1:3100
+      WEB_APP_URL: http://127.0.0.1:3100
+      REQUIRE_EMAIL_VERIFICATION: "false"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Reserve evidence metadata
+        run: mkdir -p web-app/automation/ci-run && printf '{"job":"ui"}\n' > web-app/automation/ci-run/job.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web-app/automation/package-lock.json
+            web-app/api/package-lock.json
+            web-app/package-lock.json
+
+      - name: Create disposable CI credentials
+        shell: bash
+        run: |
+          jwt_secret="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))')"
+          jwt_refresh_secret="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))')"
+          test_password="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(24).toString("base64url"))')"
+          echo "::add-mask::$jwt_secret"
+          echo "::add-mask::$jwt_refresh_secret"
+          echo "::add-mask::$test_password"
+          {
+            echo "JWT_SECRET=$jwt_secret"
+            echo "JWT_REFRESH_SECRET=$jwt_refresh_secret"
+            echo "TEST_EMAIL=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.invalid"
+            echo "TEST_PASSWORD=$test_password"
+          } >> "$GITHUB_ENV"
+
+      - name: Install automation, API and web dependencies
+        run: |
+          npm ci --prefix web-app/automation
+          npm ci --prefix web-app/api
+          npm ci --prefix web-app
+
+      - name: Install Chromium and system dependencies
+        run: web-app/automation/node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Prepare disposable app environment
+        shell: bash
+        run: |
+          cat > web-app/.env <<EOF
+          POSTGRES_PASSWORD=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          DATABASE_URL=${DATABASE_URL}
+          REDIS_URL=${REDIS_URL}
+          JWT_SECRET=${JWT_SECRET}
+          JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+          PORT=${PORT}
+          WEB_ORIGIN=${WEB_ORIGIN}
+          WEB_APP_URL=${WEB_APP_URL}
+          REQUIRE_EMAIL_VERIFICATION=false
+          EOF
+          cat > web-app/automation/.env <<EOF
+          WEB_BASE_URL=${WEB_BASE_URL}
+          API_BASE_URL=${API_BASE_URL}
+          TEST_EMAIL=${TEST_EMAIL}
+          TEST_PASSWORD=${TEST_PASSWORD}
+          DATABASE_URL=${DATABASE_URL}
+          DB_ENVIRONMENT=test
+          DB_MUTATION_TESTS=false
+          PW_BROWSER=chromium
+          PW_HEADLESS=true
+          PW_WORKERS=2
+          PW_START_WEB_SERVER=false
+          EOF
+
+      - name: Generate Prisma client, schema and build services
+        run: |
+          npm run prisma:generate --prefix web-app/api
+          (cd web-app/api && npx prisma db push --schema ../database/prisma/schema.prisma)
+          npm run build --prefix web-app/api
+          npm run build --prefix web-app
+
+      - name: Start API and web app
+        shell: bash
+        run: |
+          (cd web-app/api && npm run start) > "$RUNNER_TEMP/flownexa-api.log" 2>&1 &
+          (cd web-app && npm run start -- --hostname 127.0.0.1 --port 3100) > "$RUNNER_TEMP/flownexa-web.log" 2>&1 &
+          node --input-type=module <<'NODE'
+          const targets = ["http://127.0.0.1:4000/api/v1/docs", "http://127.0.0.1:3100"];
+          const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          for (const target of targets) {
+            let ready = false;
+            for (let attempt = 0; attempt < 90; attempt += 1) {
+              try {
+                const response = await fetch(target);
+                if (response.status < 500) { ready = true; break; }
+              } catch {}
+              await delay(2000);
+            }
+            if (!ready) throw new Error(`Service did not become ready: ${target}`);
+          }
+          console.log("FlowNexa API and web app are ready.");
+          NODE
+
+      - name: Run UI, BDD, smoke, regression and negative suites
+        working-directory: web-app/automation
+        run: npx playwright test -c config/playwright.config.ts tests/ui tests/bdd tests/smoke tests/regression tests/negative
+
+      - name: Upload UI Allure results and Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flownexa-ui-results
+          path: |
+            web-app/automation/ci-run/
+            web-app/automation/allure-results/
+            web-app/automation/test-results/
+            web-app/automation/playwright-report/
+            ${{ runner.temp }}/flownexa-api.log
+            ${{ runner.temp }}/flownexa-web.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  api-tests:
+    name: API contract tests
+    needs: setup-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: flownexa
+          POSTGRES_USER: flownexa
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flownexa -d flownexa"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://flownexa:ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/flownexa?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      DB_ENVIRONMENT: test
+      DB_MUTATION_TESTS: "false"
+      WEB_BASE_URL: http://127.0.0.1:3100
+      API_BASE_URL: http://127.0.0.1:4000/api/v1
+      PW_BROWSER: chromium
+      PW_HEADLESS: "true"
+      PW_WORKERS: "2"
+      PW_START_WEB_SERVER: "false"
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:4000/api/v1
+      PORT: "4000"
+      WEB_ORIGIN: http://127.0.0.1:3100
+      WEB_APP_URL: http://127.0.0.1:3100
+      REQUIRE_EMAIL_VERIFICATION: "false"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Reserve evidence metadata
+        run: mkdir -p web-app/automation/ci-run && printf '{"job":"api"}\n' > web-app/automation/ci-run/job.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web-app/automation/package-lock.json
+            web-app/api/package-lock.json
+            web-app/package-lock.json
+
+      - name: Create disposable CI credentials
+        shell: bash
+        run: |
+          jwt_secret="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))')"
+          jwt_refresh_secret="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))')"
+          test_password="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(24).toString("base64url"))')"
+          echo "::add-mask::$jwt_secret"
+          echo "::add-mask::$jwt_refresh_secret"
+          echo "::add-mask::$test_password"
+          {
+            echo "JWT_SECRET=$jwt_secret"
+            echo "JWT_REFRESH_SECRET=$jwt_refresh_secret"
+            echo "TEST_EMAIL=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.invalid"
+            echo "TEST_PASSWORD=$test_password"
+          } >> "$GITHUB_ENV"
+
+      - name: Install API and automation dependencies
+        run: |
+          npm ci --prefix web-app/automation
+          npm ci --prefix web-app/api
+
+      - name: Prepare disposable API environment
+        shell: bash
+        run: |
+          cat > web-app/.env <<EOF
+          POSTGRES_PASSWORD=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          DATABASE_URL=${DATABASE_URL}
+          REDIS_URL=${REDIS_URL}
+          JWT_SECRET=${JWT_SECRET}
+          JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+          PORT=${PORT}
+          WEB_ORIGIN=${WEB_ORIGIN}
+          WEB_APP_URL=${WEB_APP_URL}
+          REQUIRE_EMAIL_VERIFICATION=false
+          EOF
+          cat > web-app/automation/.env <<EOF
+          WEB_BASE_URL=${WEB_BASE_URL}
+          API_BASE_URL=${API_BASE_URL}
+          TEST_EMAIL=${TEST_EMAIL}
+          TEST_PASSWORD=${TEST_PASSWORD}
+          DATABASE_URL=${DATABASE_URL}
+          DB_ENVIRONMENT=test
+          DB_MUTATION_TESTS=false
+          PW_BROWSER=chromium
+          PW_HEADLESS=true
+          PW_WORKERS=2
+          PW_START_WEB_SERVER=false
+          EOF
+
+      - name: Generate Prisma client and schema
+        run: |
+          npm run prisma:generate --prefix web-app/api
+          (cd web-app/api && npx prisma db push --schema ../database/prisma/schema.prisma)
+          npm run build --prefix web-app/api
+
+      - name: Start API
+        shell: bash
+        run: |
+          (cd web-app/api && npm run start) > "$RUNNER_TEMP/flownexa-api.log" 2>&1 &
+          node --input-type=module <<'NODE'
+          const target = "http://127.0.0.1:4000/api/v1/docs";
+          for (let attempt = 0; attempt < 90; attempt += 1) {
+            try {
+              const response = await fetch(target);
+              if (response.status < 500) { console.log("FlowNexa API is ready."); process.exit(0); }
+            } catch {}
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+          throw new Error(`API did not become ready: ${target}`);
+          NODE
+
+      - name: Run API tests
+        working-directory: web-app/automation
+        run: npm run test:api
+
+      - name: Upload API Allure results and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flownexa-api-results
+          path: |
+            web-app/automation/ci-run/
+            web-app/automation/allure-results/
+            web-app/automation/test-results/
+            web-app/automation/playwright-report/
+            ${{ runner.temp }}/flownexa-api.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  db-tests:
+    name: Database and persistence tests
+    needs: setup-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: flownexa
+          POSTGRES_USER: flownexa
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flownexa -d flownexa"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://flownexa:ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/flownexa?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      DB_ENVIRONMENT: test
+      DB_MUTATION_TESTS: "true"
+      CI_SEED_FAKER_DB: "true"
+      WEB_BASE_URL: http://127.0.0.1:3100
+      API_BASE_URL: http://127.0.0.1:4000/api/v1
+      PW_BROWSER: chromium
+      PW_HEADLESS: "true"
+      PW_WORKERS: "2"
+      PW_START_WEB_SERVER: "false"
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:4000/api/v1
+      PORT: "4000"
+      WEB_ORIGIN: http://127.0.0.1:3100
+      WEB_APP_URL: http://127.0.0.1:3100
+      REQUIRE_EMAIL_VERIFICATION: "false"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Reserve evidence metadata
+        run: mkdir -p web-app/automation/ci-run && printf '{"job":"db"}\n' > web-app/automation/ci-run/job.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web-app/automation/package-lock.json
+            web-app/api/package-lock.json
+            web-app/package-lock.json
+
+      - name: Create disposable CI credentials
+        shell: bash
+        run: |
+          jwt_secret="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))')"
+          jwt_refresh_secret="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))')"
+          test_password="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(24).toString("base64url"))')"
+          echo "::add-mask::$jwt_secret"
+          echo "::add-mask::$jwt_refresh_secret"
+          echo "::add-mask::$test_password"
+          {
+            echo "JWT_SECRET=$jwt_secret"
+            echo "JWT_REFRESH_SECRET=$jwt_refresh_secret"
+            echo "TEST_EMAIL=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.invalid"
+            echo "TEST_PASSWORD=$test_password"
+          } >> "$GITHUB_ENV"
+
+      - name: Install automation, API and web dependencies
+        run: |
+          npm ci --prefix web-app/automation
+          npm ci --prefix web-app/api
+          npm ci --prefix web-app
+
+      - name: Install Chromium and system dependencies
+        run: web-app/automation/node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Prepare disposable app environment
+        shell: bash
+        run: |
+          cat > web-app/.env <<EOF
+          POSTGRES_PASSWORD=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          DATABASE_URL=${DATABASE_URL}
+          REDIS_URL=${REDIS_URL}
+          JWT_SECRET=${JWT_SECRET}
+          JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+          PORT=${PORT}
+          WEB_ORIGIN=${WEB_ORIGIN}
+          WEB_APP_URL=${WEB_APP_URL}
+          REQUIRE_EMAIL_VERIFICATION=false
+          EOF
+          cat > web-app/automation/.env <<EOF
+          WEB_BASE_URL=${WEB_BASE_URL}
+          API_BASE_URL=${API_BASE_URL}
+          TEST_EMAIL=${TEST_EMAIL}
+          TEST_PASSWORD=${TEST_PASSWORD}
+          TEST_ORGANIZATION_ID=test-organization-id
+          DATABASE_URL=${DATABASE_URL}
+          DB_ENVIRONMENT=test
+          DB_MUTATION_TESTS=true
+          CI_SEED_FAKER_DB=true
+          PW_BROWSER=chromium
+          PW_HEADLESS=true
+          PW_WORKERS=2
+          PW_START_WEB_SERVER=false
+          EOF
+
+      - name: Generate Prisma client, schema and build services
+        run: |
+          npm run prisma:generate --prefix web-app/api
+          (cd web-app/api && npx prisma db push --schema ../database/prisma/schema.prisma)
+          npm run build --prefix web-app/api
+          npm run build --prefix web-app
+
+      - name: Start API and web app
+        shell: bash
+        run: |
+          (cd web-app/api && npm run start) > "$RUNNER_TEMP/flownexa-api.log" 2>&1 &
+          (cd web-app && npm run start -- --hostname 127.0.0.1 --port 3100) > "$RUNNER_TEMP/flownexa-web.log" 2>&1 &
+          node --input-type=module <<'NODE'
+          const targets = ["http://127.0.0.1:4000/api/v1/docs", "http://127.0.0.1:3100"];
+          for (const target of targets) {
+            let ready = false;
+            for (let attempt = 0; attempt < 90; attempt += 1) {
+              try {
+                const response = await fetch(target);
+                if (response.status < 500) { ready = true; break; }
+              } catch {}
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+            if (!ready) throw new Error(`Service did not become ready: ${target}`);
+          }
+          console.log("FlowNexa API and web app are ready.");
+          NODE
+
+      - name: Run DB, API-to-DB and web-to-DB tests
+        working-directory: web-app/automation
+        run: npm run test:db:all
+
+      - name: Upload DB Allure results and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flownexa-db-results
+          path: |
+            web-app/automation/ci-run/
+            web-app/automation/allure-results/
+            web-app/automation/test-results/
+            web-app/automation/playwright-report/
+            web-app/automation/artifacts/db/
+            ${{ runner.temp }}/flownexa-api.log
+            ${{ runner.temp }}/flownexa-web.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  generate-report:
+    name: Merge results and generate reports
+    needs: [setup-check, ui-tests, api-tests, db-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-app/automation/package-lock.json
+
+      - name: Install report dependencies
+        if: needs.setup-check.result == 'success'
+        working-directory: web-app/automation
+        run: npm ci
+
+      - name: Set up Java for Allure
+        if: needs.setup-check.result == 'success'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Restore Allure history cache
+        if: needs.setup-check.result == 'success' && github.event_name != 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: web-app/automation/ci-history
+          key: flownexa-allure-history-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            flownexa-allure-history-${{ github.ref_name }}-
+
+      - name: Download UI, API and DB result artifacts
+        if: needs.setup-check.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: flownexa-*-results
+          path: web-app/automation/.ci-artifacts
+          merge-multiple: false
+
+      - name: Merge Allure results and history
+        if: needs.setup-check.result == 'success'
+        working-directory: web-app/automation
+        run: node scripts/merge-ci-allure-results.mjs
+
+      - name: Generate consolidated Allure report
+        id: allure-report
+        if: needs.setup-check.result == 'success'
+        working-directory: web-app/automation
+        env:
+          GITHUB_ACTIONS: "true"
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+        run: |
+          npm run report:allure
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Write truthful GitHub Actions summary
+        if: always()
+        working-directory: web-app/automation
+        env:
+          FLOWNEXA_SETUP_STATUS: ${{ needs.setup-check.result }}
+          FLOWNEXA_UI_STATUS: ${{ needs.ui-tests.result }}
+          FLOWNEXA_API_STATUS: ${{ needs.api-tests.result }}
+          FLOWNEXA_DB_STATUS: ${{ needs.db-tests.result }}
+          FLOWNEXA_BRANCH: ${{ github.ref_name }}
+          FLOWNEXA_SHA: ${{ github.sha }}
+          FLOWNEXA_EVENT: ${{ github.event_name }}
+          FLOWNEXA_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/generate-ci-summary.mjs
+
+      - name: Save updated Allure trend history
+        if: needs.setup-check.result == 'success' && github.event_name != 'pull_request' && hashFiles('web-app/automation/allure-report/history/**') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: web-app/automation/allure-report/history
+          key: flownexa-allure-history-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload consolidated Allure report
+        if: always() && needs.setup-check.result == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flownexa-allure-report
+          path: web-app/automation/allure-report/
+          if-no-files-found: warn
+          retention-days: 14
+
+    outputs:
+      report_ready: ${{ steps.allure-report.outputs.ready }}
+
+  publish-report:
+    name: Publish Allure report to GitHub Pages
+    needs: generate-report
+    if: >-
+      always() && needs.generate-report.result == 'success' &&
+      needs.generate-report.outputs.report_ready == 'true' &&
+      github.event_name != 'pull_request' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      vars.PUBLISH_ALLURE_REPORT == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download consolidated Allure report
+        uses: actions/download-artifact@v4
+        with:
+          name: flownexa-allure-report
+          path: site
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Keep Allure assets visible to GitHub Pages
+        run: touch site/.nojekyll
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy Allure report
+        id: deployment
+        uses: actions/deploy-pages@v4
