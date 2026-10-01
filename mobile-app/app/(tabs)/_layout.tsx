@@ -1,8 +1,8 @@
 import { Tabs } from "expo-router";
 
-// Main mobile sections stay visible in a small bottom navigation bar.
+// Keep quick-access tabs visible; the Home screen drawer contains the full workspace navigation.
 export default function TabLayout() {
-  return <Tabs screenOptions={{ headerStyle: { backgroundColor: "#fff" }, tabBarActiveTintColor: "#7566c5", tabBarLabelStyle: { fontSize: 12 } }}>
+  return <Tabs screenOptions={{ headerShown: false, tabBarStyle: { height: 62, paddingTop: 5, paddingBottom: 7, borderTopColor: "#e8eaf1", backgroundColor: "#fff" }, tabBarActiveTintColor: "#6655b5", tabBarInactiveTintColor: "#8b90a0", tabBarLabelStyle: { fontSize: 10, fontWeight: "700" } }}>
     <Tabs.Screen name="index" options={{ title: "Home", tabBarLabel: "Home" }}/>
     <Tabs.Screen name="tasks" options={{ title: "My Tasks", tabBarLabel: "Tasks" }}/>
     <Tabs.Screen name="create" options={{ title: "Create", tabBarLabel: "Create" }}/>

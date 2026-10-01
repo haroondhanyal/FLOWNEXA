@@ -1,0 +1,12 @@
+import { useState } from "react";
+import { ActivityIndicator, Pressable, SafeAreaView, Text, TextInput, View } from "react-native";
+import { router } from "expo-router";
+import { api, tokenStore } from "../lib/api";
+import { authStyles as styles } from "./index";
+
+export default function RegisterScreen() {
+  const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const register = async () => { setBusy(true); setError(""); try { const result = await api<{ accessToken?: string; verificationRequired?: boolean }>("/auth/register", { method: "POST", body: JSON.stringify({ name: name.trim(), email: email.trim(), password }) }); if (result.accessToken) { await tokenStore.set(result.accessToken); router.replace("/(tabs)"); } else router.push({ pathname: "/verify-email", params: { email: email.trim() } } as never); } catch (cause) { setError(cause instanceof Error ? cause.message : "Account could not be created"); } finally { setBusy(false); } };
+  const disabled = busy || name.trim().length < 2 || !email.includes("@") || password.length < 12;
+  return <SafeAreaView style={styles.page}><View style={styles.card}><Text style={styles.brand}>flow<Text style={styles.brandAccent}>nexa</Text></Text><Text style={styles.heading}>Create your account</Text><Text style={styles.muted}>Your workspace starts with a secure FlowNexa account.</Text><TextInput autoComplete="name" placeholder="Full name" value={name} onChangeText={setName} style={styles.input}/><TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="Email address" value={email} onChangeText={setEmail} style={styles.input}/><TextInput secureTextEntry autoComplete="new-password" placeholder="Password · at least 12 characters" value={password} onChangeText={setPassword} style={styles.input}/>{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}<Pressable onPress={() => void register()} disabled={disabled} style={[styles.primary, disabled && styles.disabled]}>{busy ? <ActivityIndicator color="white"/> : <Text style={styles.primaryText}>Create account</Text>}</Pressable><Pressable onPress={() => router.replace("/" as never)}><Text style={styles.link}>Already have an account? Sign in</Text></Pressable></View></SafeAreaView>;
+}

@@ -4,11 +4,11 @@ import { useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as FileSystem from "expo-file-system/legacy";
-import { api, ApiError, Organization, Task } from "../../lib/api";
+import { API_URL, api, ApiError, Organization, Task, tokenStore } from "../../lib/api";
 
 const DRAFT_KEY = "flownexa.work-update-drafts";
 const CAMERA_DRAFT_KEY = "flownexa.local-evidence-drafts";
-type Draft = { taskId: string; completed: string; progress: number; evidenceUrl: string; imageUri?: string };
+type Draft = { taskId: string; completed: string; progress: number; evidenceUrl: string; imageUri?: string; updateSubmitted?: boolean };
 type Project = { id: string; name: string };
 type LocalEvidence = { id: string; taskId: string; imageUri: string; note: string; capturedAt: string };
 
@@ -45,8 +45,11 @@ export default function CreateScreen() {
     if (!organization || !taskId || !completed.trim()) return;
     try {
       await api(`/organizations/${organization.id}/tasks/${taskId}/work-updates`, { method: "POST", body: JSON.stringify({ progress: Number(progress), completed, evidenceUrls: evidenceUrl ? [evidenceUrl] : [] }) });
-      if (imageUri) await retainPhoto();
-      setCompleted(""); setEvidenceUrl(""); setImageUri(""); setMessage(imageUri ? "Update submitted. Photo saved as a local evidence draft; upload service is not configured." : "Work update submitted.");
+      if (imageUri) {
+        try { await uploadEvidence(taskId, imageUri); await FileSystem.deleteAsync(imageUri, { idempotent: true }); setImageUri(""); setMessage("Work update and photo submitted."); }
+        catch { await retainPhoto(); setImageUri(""); setMessage("Update submitted. Photo remains saved on this device because upload failed."); }
+      }
+      setCompleted(""); setEvidenceUrl(""); if (!imageUri) setMessage("Work update submitted.");
     } catch (cause) {
       // Only network failures become drafts; server validation errors stay visible.
       if (cause instanceof TypeError) await saveDraft();
@@ -73,6 +76,20 @@ export default function CreateScreen() {
     const next = [...localEvidence, item];
     await AsyncStorage.setItem(CAMERA_DRAFT_KEY, JSON.stringify(next)); setLocalEvidence(next);
   };
+  const uploadEvidence = async (selectedTaskId: string, uri: string) => {
+    const token = await tokenStore.get();
+    const result = await FileSystem.uploadAsync(`${API_URL}/organizations/${organization?.id}/tasks/${selectedTaskId}/evidence`, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: "image/jpeg",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (result.status < 200 || result.status >= 300) {
+      const payload = JSON.parse(result.body || "{}") as { message?: string };
+      throw new Error(payload.message ?? `Evidence upload failed (${result.status})`);
+    }
+  };
   const discardPhoto = async (item: LocalEvidence) => {
     await FileSystem.deleteAsync(item.imageUri, { idempotent: true });
     const next = localEvidence.filter((photo) => photo.id !== item.id);
@@ -83,10 +100,15 @@ export default function CreateScreen() {
     const drafts = JSON.parse(await AsyncStorage.getItem(DRAFT_KEY) ?? "[]") as Draft[];
     const pending: Draft[] = [];
     for (const draft of drafts) {
-      // Keep a captured photo draft until the API has a file upload endpoint.
-      if (draft.imageUri) { pending.push(draft); continue; }
-      try { await api(`/organizations/${organization.id}/tasks/${draft.taskId}/work-updates`, { method: "POST", body: JSON.stringify({ progress: draft.progress, completed: draft.completed, evidenceUrls: draft.evidenceUrl ? [draft.evidenceUrl] : [] }) }); }
-      catch { pending.push(draft); }
+      let updateSubmitted = draft.updateSubmitted ?? false;
+      if (!updateSubmitted) {
+        try { await api(`/organizations/${organization.id}/tasks/${draft.taskId}/work-updates`, { method: "POST", body: JSON.stringify({ progress: draft.progress, completed: draft.completed, evidenceUrls: draft.evidenceUrl ? [draft.evidenceUrl] : [] }) }); updateSubmitted = true; }
+        catch { pending.push(draft); continue; }
+      }
+      if (draft.imageUri) {
+        try { await uploadEvidence(draft.taskId, draft.imageUri); await FileSystem.deleteAsync(draft.imageUri, { idempotent: true }); }
+        catch { pending.push({ ...draft, updateSubmitted: true }); }
+      }
     }
     await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(pending)); setMessage(`${drafts.length - pending.length} draft(s) synced; ${pending.length} still pending.`);
   };

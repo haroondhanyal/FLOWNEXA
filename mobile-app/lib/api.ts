@@ -4,8 +4,10 @@ export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000
 const TOKEN_KEY = "flownexa.access-token";
 const DEVICE_TOKEN_KEY = "flownexa.device-token";
 let refreshRequest: Promise<string | null> | null = null;
-export type Task = { id: string; title: string; status: string; priority: string; dueAt: string | null; project?: { name: string } | null };
-export type Organization = { id: string; name: string; workspaces: { id: string; name: string }[] };
+export type Task = { id: string; title: string; description?: string | null; status: string; priority: string; dueAt: string | null; progress?: number; project?: { id?: string; name: string; workspaceId?: string } | null; assignees?: { user: { id: string; name: string; email?: string } }[] };
+export type Workspace = { id: string; name: string; logoUrl?: string | null };
+export type Organization = { id: string; name: string; role?: string; workspaces: Workspace[] };
+export type UserProfile = { id: string; name: string; email: string; phoneNumber?: string | null; avatarUrl?: string | null; role?: string; organizationName?: string | null; emailVerifiedAt?: string | null };
 export class ApiError extends Error { constructor(message: string, readonly status: number) { super(message); } }
 
 // Keep mobile auth tokens in encrypted device storage rather than AsyncStorage.
@@ -30,7 +32,8 @@ export async function refreshAccessToken() {
 export async function api<T>(path: string, options: RequestInit = {}, retried = false): Promise<T> {
   const token = await tokenStore.get();
   const headers = new Headers(options.headers);
-  if (options.body) headers.set("Content-Type", "application/json");
+  const isMultipart = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body && !isMultipart) headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: "include" });
   if (response.status === 401 && !retried && !path.startsWith("/auth/")) {
